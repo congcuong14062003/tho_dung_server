@@ -32,10 +32,27 @@ export const AuthController = {
 
       const existing = await UserModel.findByPhone(phone);
       if (existing) {
+        // Nếu tài khoản chưa verify → gửi lại OTP mới
+        if (!existing.verified) {
+          const otp = generateOTP();
+          const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+          await UserModel.updateUser(existing.id, {
+            otp_code: otp,
+            otp_expiry: otpExpiry,
+          });
+          await sendOTP(phone, otp);
+          return baseResponse(res, {
+            code: 200,
+            message: "Tài khoản chưa xác minh, OTP mới đã được gửi lại.",
+            data: { phone, role: existing.role },
+          });
+        }
+
+        // Nếu đã verify rồi → báo lỗi trùng
         return baseResponse(res, {
           code: 400,
           status: false,
-          message: "Số điện thoại đã được đăng ký",
+          message: "Số điện thoại đã được đăng ký và xác minh.",
         });
       }
 
@@ -138,6 +155,62 @@ export const AuthController = {
     }
   },
 
+  async resendOTP(req, res) {
+    try {
+      const { phone } = req.body;
+
+      if (!phone) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu số điện thoại",
+        });
+      }
+
+      const user = await UserModel.findByPhone(phone);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      if (user.verified) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Tài khoản đã được xác minh, không cần gửi lại OTP",
+        });
+      }
+
+
+      const otp = generateOTP();
+      const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
+
+      await UserModel.updateUser(user.id, {
+        otp_code: otp,
+        otp_expiry: otpExpiry,
+      });
+
+      await sendOTP(phone, otp);
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Đã gửi lại mã OTP thành công.",
+        data: { phone },
+      });
+    } catch (error) {
+      console.error(error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi gửi lại OTP",
+      });
+    }
+  },
+
   async login(req, res) {
     try {
       const { phone, password } = req.body;
@@ -167,12 +240,15 @@ export const AuthController = {
         });
       }
 
-      const isMatch = await bcrypt.compare(password, user.password_hash || user.password);
+      const isMatch = await bcrypt.compare(
+        password,
+        user.password_hash || user.password
+      );
       if (!isMatch) {
         return baseResponse(res, {
           code: 401,
           status: false,
-          message: "Sai mật khẩu",
+          message: "Sai tên đăng nhập hoặc mật khẩu",
         });
       }
 
@@ -181,6 +257,7 @@ export const AuthController = {
       return baseResponse(res, {
         code: 200,
         message: "Đăng nhập thành công",
+        status: true,
         data: {
           token,
           user: {
@@ -260,7 +337,15 @@ export const AuthController = {
 
   async updateRole(req, res) {
     try {
-      const { userId, role, skill_category_id, experience_years, description, working_area, certifications } = req.body;
+      const {
+        userId,
+        role,
+        skill_category_id,
+        experience_years,
+        description,
+        working_area,
+        certifications,
+      } = req.body;
 
       if (!userId || !role) {
         return baseResponse(res, {

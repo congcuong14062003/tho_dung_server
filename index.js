@@ -14,13 +14,12 @@ const PORT = process.env.PORT || 5000;
 app.use(logger("dev"));
 app.use(cors());
 app.use(express.json());
+app.use("/uploads", express.static("uploads"));
 
 // Kết nối DB test
 const testDBConnection = async () => {
   try {
-    const [rows] = await db.query("SELECT 1 + 1 AS result");
     console.log("✅ Database connected successfully!");
-    console.log("Test query result:", rows[0].result);
   } catch (error) {
     console.error("❌ Database connection failed:", error.message);
   }
@@ -29,7 +28,7 @@ const testDBConnection = async () => {
 // Gắn route chính
 app.use("/apis", RouterMain(express.Router()));
 
-app.listen(PORT, async () => {
+app.listen(PORT, '0.0.0.0', async () => {
   console.log(`🚀 Server running on port ${PORT}`);
   await testDBConnection();
 });
