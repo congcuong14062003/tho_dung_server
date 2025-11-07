@@ -6,7 +6,7 @@ import { upload } from "../middlewares/upload.js";
 const router = express.Router();
 
 // Public: lấy danh sách danh mục
-router.get("/", CategoryController.getAll);
+router.post("/list-category", CategoryController.getListPaginated);
 
 // Chỉ admin được phép CRUD
 router.post(

@@ -31,7 +31,16 @@ export const UserModel = {
     const [rows] = await db.query("SELECT * FROM users WHERE id = ?", [id]);
     return rows[0];
   },
-
+  // Lấy thông tin user theo ID
+  async getUserById(userId) {
+    const [rows] = await db.query(
+      `SELECT id, full_name, phone, id_card, avatar_link, role, status, verified, created_at, updated_at
+       FROM users
+       WHERE id = ?`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
   async updateUser(id, data) {
     const keys = Object.keys(data);
     const values = Object.values(data);
@@ -44,4 +53,12 @@ export const UserModel = {
       id,
     ]);
   },
+ async updateAvatar(userId, avatarPath) {
+    const [result] = await db.query(
+      "UPDATE users SET avatar_link = ?, updated_at = NOW() WHERE id = ?",
+      [avatarPath, userId]
+    );
+    return result.affectedRows > 0;
+  },
+
 };

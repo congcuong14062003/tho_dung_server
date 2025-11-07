@@ -9,6 +9,27 @@ export const CategoryModel = {
     return rows;
   },
 
+  async getPaginated({ keySearch = "", limit, offset }) {
+    const searchQuery = `%${keySearch}%`;
+
+    const [data] = await pool.query(
+      `SELECT id, name, description, icon, status
+       FROM service_categories
+       WHERE status = 1 AND name LIKE ?
+       ORDER BY id DESC
+       LIMIT ? OFFSET ?`,
+      [searchQuery, limit, offset]
+    );
+    
+    const [[{ total }]] = await pool.query(
+      `SELECT COUNT(*) AS total 
+       FROM service_categories 
+       WHERE status = 1 AND name LIKE ?`,
+      [searchQuery]
+    );
+
+    return { data, total };
+  },
   // Lấy danh mục theo ID
   async getById(id) {
     const [rows] = await pool.query(

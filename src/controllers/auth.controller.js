@@ -7,7 +7,7 @@ import { TechnicianModel } from "../models/technician.model.js";
 
 export const AuthController = {
   validateRole(role) {
-    return ["customer", "worker"].includes(role);
+    return ["customer", "technician"].includes(role);
   },
 
   async register(req, res) {
@@ -359,7 +359,7 @@ export const AuthController = {
         return baseResponse(res, {
           code: 400,
           status: false,
-          message: "Vai trò không hợp lệ (chỉ customer hoặc worker)",
+          message: "Vai trò không hợp lệ (chỉ customer hoặc technician)",
         });
       }
 
@@ -376,7 +376,7 @@ export const AuthController = {
       await UserModel.updateUser(userId, { role });
 
       // Nếu là thợ thì lưu thông tin kỹ năng vào technician_profiles
-      if (role === "worker") {
+      if (role === "technician") {
         await TechnicianModel.createOrUpdateProfile({
           user_id: userId,
           skill_category_id,

@@ -2,7 +2,7 @@ import multer from "multer";
 import path from "path";
 import fs from "fs";
 
-const uploadDir = "uploads/icons";
+const uploadDir = "uploads";
 
 // Tạo folder nếu chưa có
 if (!fs.existsSync(uploadDir)) {

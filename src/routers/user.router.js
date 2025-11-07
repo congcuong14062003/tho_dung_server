@@ -1,21 +1,17 @@
 import express from "express";
 import { verifyToken, authorizeRoles } from "../middlewares/auth.middleware.js";
+import { UserController } from "../controllers/user.controller.js";
+import { upload } from "../middlewares/upload.js";
 
 const router = express.Router();
 
-// Chỉ cho phép admin truy cập
-router.get("/admin-only", verifyToken, authorizeRoles("admin"), (req, res) => {
-  res.json({ message: "Admin truy cập thành công" });
-});
-
-// Cho phép worker và admin
-router.get("/worker-or-admin", verifyToken, authorizeRoles("worker", "admin"), (req, res) => {
-  res.json({ message: "Worker hoặc Admin truy cập được" });
-});
-
-// Cho phép customer
-router.get("/customer-info", verifyToken, authorizeRoles("customer"), (req, res) => {
-  res.json({ message: "Customer truy cập thành công" });
-});
+// 🔒 Lấy thông tin người dùng hiện tại (đã đăng nhập)
+router.get("/user-profile", verifyToken, UserController.getProfile);
+router.post(
+  "/update-avatar",
+  verifyToken,
+  upload.single("avatar"),
+  UserController.updateAvatar
+);
 
 export default router;

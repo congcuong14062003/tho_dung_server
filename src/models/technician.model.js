@@ -29,4 +29,26 @@ export const TechnicianModel = {
       );
     }
   },
+   async getAllWithUser() {
+    const [rows] = await db.query(`
+      SELECT 
+        u.id AS user_id,
+        u.full_name,
+        u.phone,
+        u.role,
+        t.id AS technician_id,
+        t.skill_category_id,
+        t.experience_years,
+        t.description,
+        t.working_area,
+        t.certifications,
+        t.created_at,
+        t.updated_at
+      FROM users u
+      INNER JOIN technician_profiles t ON u.id = t.user_id
+      WHERE u.role = 'technician'
+      ORDER BY t.created_at DESC
+    `);
+    return rows;
+  },
 };

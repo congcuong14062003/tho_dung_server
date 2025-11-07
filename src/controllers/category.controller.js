@@ -22,7 +22,47 @@ export const CategoryController = {
       });
     }
   },
+  // ===============================
+  // 🔹 Lấy danh mục có phân trang
+  // ===============================
+  async getListPaginated(req, res) {
+    try {
+      let { page = 1, size = 10, keySearch = "" } = req.body;
+      page = Number(page);
+      size = Number(size);
 
+      if (page < 1) page = 1;
+      if (size < 1) size = 10;
+
+      const offset = (page - 1) * size;
+
+      const { data, total } = await CategoryModel.getPaginated({
+        keySearch,
+        limit: size,
+        offset,
+      });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Lấy danh sách danh mục thành công",
+        data: {
+          page,
+          size,
+          total,
+          totalPages: Math.ceil(total / size),
+          data: data,
+        },
+      });
+    } catch (error) {
+      console.error("getListPaginated:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi lấy danh mục có phân trang",
+      });
+    }
+  },
   // ===============================
   // 🔹 Lấy danh mục theo ID
   // ===============================
@@ -57,7 +97,7 @@ export const CategoryController = {
   async create(req, res) {
     try {
       const { name, description } = req.body;
-      const icon = req.file ? `/uploads/icons/${req.file.filename}` : null;
+      const icon = req.file ? `/uploads/${req.file.filename}` : null;
 
       if (!name) {
         return baseResponse(res, {
@@ -99,7 +139,7 @@ export const CategoryController = {
     try {
       const id = req.params.id;
       const { name, description } = req.body;
-      const icon = req.file ? `/uploads/icons/${req.file.filename}` : null;
+      const icon = req.file ? `/uploads/${req.file.filename}` : null;
 
       // Kiểm tra tồn tại danh mục cần cập nhật
       const current = await CategoryModel.getById(id);
