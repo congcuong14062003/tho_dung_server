@@ -7,6 +7,7 @@ export const generateToken = (user) => {
     id: user.id,
     phone: user.phone,
     role: user.role,
+    username: user.full_name,
   };
   return jwt.sign(payload, process.env.JWT_SECRET, { expiresIn: "7d" });
 };

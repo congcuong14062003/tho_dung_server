@@ -34,7 +34,7 @@ export const UserModel = {
   // Lấy thông tin user theo ID
   async getUserById(userId) {
     const [rows] = await db.query(
-      `SELECT id, full_name, phone, id_card, avatar_link, role, status, verified, created_at, updated_at
+      `SELECT id, full_name, phone, id_card, avatar_link, role
        FROM users
        WHERE id = ?`,
       [userId]

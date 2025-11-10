@@ -1,6 +1,7 @@
 import { CategoryModel } from "../models/category.model.js";
 import { baseResponse } from "../utils/response.helper.js";
-
+import dotenv from "dotenv";
+dotenv.config();
 export const CategoryController = {
   // ===============================
   // 🔹 Lấy tất cả danh mục
@@ -97,7 +98,7 @@ export const CategoryController = {
   async create(req, res) {
     try {
       const { name, description } = req.body;
-      const icon = req.file ? `/uploads/${req.file.filename}` : null;
+      const icon = req.file ? `${process.env.URL_SERVER}/uploads/${req.file.filename}` : null;
 
       if (!name) {
         return baseResponse(res, {
@@ -118,7 +119,7 @@ export const CategoryController = {
       const id = await CategoryModel.create({ name, description, icon });
 
       return baseResponse(res, {
-        code: 201,
+        code: 200,
         message: "Thêm danh mục thành công",
         data: { id, name, icon },
       });
@@ -139,7 +140,7 @@ export const CategoryController = {
     try {
       const id = req.params.id;
       const { name, description } = req.body;
-      const icon = req.file ? `/uploads/${req.file.filename}` : null;
+      const icon = req.file ? `${process.env.URL_SERVER}/uploads/${req.file.filename}` : null;
 
       // Kiểm tra tồn tại danh mục cần cập nhật
       const current = await CategoryModel.getById(id);
@@ -179,6 +180,8 @@ export const CategoryController = {
       }
 
       return baseResponse(res, {
+        code: 200,
+        status: true,
         message: "Cập nhật danh mục thành công",
       });
     } catch (error) {

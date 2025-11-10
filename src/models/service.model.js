@@ -38,10 +38,10 @@ export const ServiceModel = {
   },
 
   // Cập nhật
-  async update(id, { name, description, base_price }) {
+  async update(id, { name, description, base_price, category_id }) {
     const [result] = await pool.query(
-      "UPDATE services SET name=?, description=?, base_price=? WHERE id=?",
-      [name, description, base_price, id]
+      "UPDATE services SET name=?, description=?, base_price=?, category_id=? WHERE id=?",
+      [name, description || "", base_price || 0, category_id, id]
     );
     return result.affectedRows;
   },

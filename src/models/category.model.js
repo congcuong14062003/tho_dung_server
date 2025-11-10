@@ -4,7 +4,7 @@ export const CategoryModel = {
   // Lấy tất cả danh mục cha
   async getAll() {
     const [rows] = await pool.query(
-      "SELECT * FROM service_categories WHERE status = 1 ORDER BY id ASC"
+      "SELECT * FROM service_categories WHERE status = 1 ORDER BY order ASC"
     );
     return rows;
   },
@@ -16,7 +16,7 @@ export const CategoryModel = {
       `SELECT id, name, description, icon, status
        FROM service_categories
        WHERE status = 1 AND name LIKE ?
-       ORDER BY id DESC
+       ORDER BY \`order\` ASC
        LIMIT ? OFFSET ?`,
       [searchQuery, limit, offset]
     );

@@ -10,21 +10,21 @@ router.post("/list-category", CategoryController.getListPaginated);
 
 // Chỉ admin được phép CRUD
 router.post(
-  "/",
+  "/create-category",
   verifyToken,
   authorizeRoles("admin"),
   upload.single("icon"),
   CategoryController.create
 );
 router.post(
-  "/:id",
+  "/update-category/:id",
   verifyToken,
   authorizeRoles("admin"),
   upload.single("icon"),
   CategoryController.update
 );
-router.delete(
-  "/:id",
+router.post(
+  "/delete-category/:id",
   verifyToken,
   authorizeRoles("admin"),
   CategoryController.delete

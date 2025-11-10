@@ -74,7 +74,7 @@ export const AuthController = {
       await sendOTP(phone, otp);
 
       return baseResponse(res, {
-        code: 201,
+        code: 200,
         message: "Đăng ký thành công, vui lòng xác minh OTP.",
         data: { userId, phone, role },
       });
@@ -184,7 +184,6 @@ export const AuthController = {
         });
       }
 
-
       const otp = generateOTP();
       const otpExpiry = new Date(Date.now() + 10 * 60 * 1000);
 
@@ -260,13 +259,15 @@ export const AuthController = {
         status: true,
         data: {
           token,
-          user: {
+          userInfor: {
             id: user.id,
-            fullname: user.full_name || user.fullname,
-            idcard: user.id_card || user.idcard,
+            full_name: user.full_name || user.fullname,
+            id_card: user.id_card || user.idcard,
             phone: user.phone,
             role: user.role,
+            avatar_link: user.avatar_link,
           },
+          workerInfor: null,
         },
       });
     } catch (error) {
@@ -313,7 +314,7 @@ export const AuthController = {
       const token = generateToken(admin);
 
       return baseResponse(res, {
-        code: 201,
+        code: 200,
         message: "Tạo admin thành công",
         data: {
           token,

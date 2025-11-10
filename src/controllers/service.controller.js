@@ -75,7 +75,7 @@ export const ServiceController = {
       });
 
       return baseResponse(res, {
-        code: 201,
+        code: 200,
         message: "Thêm dịch vụ thành công",
         data: { id, name, base_price },
       });
@@ -88,14 +88,13 @@ export const ServiceController = {
       });
     }
   },
-
   // ===============================
   // 🔹 Cập nhật service
   // ===============================
   async update(req, res) {
     try {
       const id = req.params.id;
-      const { name, description, base_price, category_id } = req.body;
+      const { name, description, base_price, category_id } = req.body; // 👈 FE gửi "base_price"
 
       // Kiểm tra service có tồn tại không
       const service = await ServiceModel.getById(id);
@@ -115,10 +114,12 @@ export const ServiceController = {
           message: "Tên dịch vụ đã tồn tại trong danh mục này",
         });
 
+      // Cập nhật dữ liệu
       const affected = await ServiceModel.update(id, {
         name,
         description,
         base_price,
+        category_id,
       });
 
       if (!affected)
@@ -141,7 +142,6 @@ export const ServiceController = {
       });
     }
   },
-
   // ===============================
   // 🔹 Xóa service (status = 0)
   // ===============================
