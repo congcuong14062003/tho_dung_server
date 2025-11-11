@@ -245,7 +245,7 @@ export const AuthController = {
       );
       if (!isMatch) {
         return baseResponse(res, {
-          code: 401,
+          code: 400,
           status: false,
           message: "Sai tên đăng nhập hoặc mật khẩu",
         });

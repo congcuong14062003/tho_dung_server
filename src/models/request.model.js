@@ -1,21 +1,83 @@
 import db from "../config/db.js";
+import { generateId } from "../utils/crypto.js";
 
 export const RequestModel = {
-  // Tạo yêu cầu mới
+  // ===============================
+  // 🔹 Tạo yêu cầu mới
+  // ===============================
   async create({
     user_id,
     service_id,
     name_request,
     description,
     address,
+    requested_date,
     requested_time,
+    images = [],
   }) {
-    const [result] = await db.query(
-      `INSERT INTO requests (user_id, service_id, name_request, description, address, requested_time)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [user_id, service_id, name_request, description, address, requested_time]
-    );
-    return result.insertId;
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const requestId = generateId("REQ_"); // ví dụ: REQ-ABCD1234
+
+      // 1️⃣ Insert vào bảng requests
+      await connection.query(
+        `
+        INSERT INTO requests (id, user_id, service_id, name_request, description, address, requested_date, requested_time)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        `,
+        [
+          requestId,
+          user_id,
+          service_id,
+          name_request || "",
+          description || "",
+          address,
+          requested_date || null,
+          requested_time || null,
+        ]
+      );
+
+      // 2️⃣ Nếu có ảnh thì thêm vào request_images
+      if (images && images.length > 0) {
+        const imageValues = images.map((url) => [
+          generateId("IMG"),
+          requestId,
+          user_id,
+          url,
+        ]);
+        await connection.query(
+          `INSERT INTO request_images (id, request_id, uploaded_by, image_url) VALUES ?`,
+          [imageValues]
+        );
+      }
+
+      // 3️⃣ Ghi log trạng thái ban đầu
+      await connection.query(
+        `
+        INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
+        VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [
+          generateId("LOG"),
+          requestId,
+          null,
+          "pending",
+          user_id,
+          "Khách hàng tạo yêu cầu mới",
+        ]
+      );
+
+      await connection.commit();
+      connection.release();
+
+      return requestId;
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
   },
 
   // Thêm danh sách ảnh cho yêu cầu
@@ -35,11 +97,21 @@ export const RequestModel = {
   async getAll({ keySearch = "", status = "all", limit = 10, offset = 0 }) {
     const search = `%${keySearch}%`;
     let statusCondition = "";
-    const params = [search, search, search, search, limit, offset];
+    const params = [
+      search,
+      search,
+      search,
+      search,
+      search,
+      search,
+      search,
+      limit,
+      offset,
+    ];
 
     if (status !== "all") {
       statusCondition = "AND r.status = ?";
-      params.unshift(status);
+      params.unshift(status); // thêm status vào đầu
     }
 
     const [rows] = await db.query(
@@ -49,23 +121,29 @@ export const RequestModel = {
       r.name_request,
       r.description,
       r.address,
+      r.requested_date,
       r.requested_time,
       r.status,
       u.full_name AS customer_name,
+      t.full_name AS technician_name,
       s.name AS service_name,
       sc.name AS category_name
     FROM requests r
     JOIN users u ON r.user_id = u.id
+    LEFT JOIN users t ON r.technician_id = t.id
     JOIN services s ON r.service_id = s.id
     JOIN service_categories sc ON s.category_id = sc.id
     WHERE 
       1=1
       ${statusCondition}
       AND (
+        r.id LIKE ? OR
         r.name_request LIKE ? OR
         r.address LIKE ? OR
         u.full_name LIKE ? OR
-        s.name LIKE ?
+        t.full_name LIKE ? OR
+        s.name LIKE ? OR
+        sc.name LIKE ?
       )
     ORDER BY r.created_at DESC
     LIMIT ? OFFSET ?
@@ -73,7 +151,16 @@ export const RequestModel = {
       params
     );
 
-    const countParams = [search, search, search, search];
+    // Đếm tổng
+    const countParams = [
+      search,
+      search,
+      search,
+      search,
+      search,
+      search,
+      search,
+    ];
     if (status !== "all") countParams.unshift(status);
 
     const [[{ total }]] = await db.query(
@@ -81,15 +168,20 @@ export const RequestModel = {
     SELECT COUNT(*) AS total
     FROM requests r
     JOIN users u ON r.user_id = u.id
+    LEFT JOIN users t ON r.technician_id = t.id
     JOIN services s ON r.service_id = s.id
+    JOIN service_categories sc ON s.category_id = sc.id
     WHERE 
       1=1
       ${statusCondition}
       AND (
+        r.id LIKE ? OR
         r.name_request LIKE ? OR
         r.address LIKE ? OR
         u.full_name LIKE ? OR
-        s.name LIKE ?
+        t.full_name LIKE ? OR
+        s.name LIKE ? OR
+        sc.name LIKE ?
       )
     `,
       countParams
@@ -97,7 +189,6 @@ export const RequestModel = {
 
     return { data: rows, total };
   },
-
   async getRequestsByUser({
     userId,
     keySearch = "",
@@ -125,9 +216,12 @@ export const RequestModel = {
       r.description,
       r.address,
       r.status,
+      r.created_at,
+      r.requested_date,
       r.requested_time,
       s.name AS service_name,
-      sc.name AS category_name
+      sc.name AS category_name,
+      sc.color AS category_color
     FROM requests r
     JOIN services s ON r.service_id = s.id
     JOIN service_categories sc ON s.category_id = sc.id
@@ -190,6 +284,7 @@ export const RequestModel = {
         c.id AS customer_id,
         c.full_name AS customer_name,
         c.avatar_link AS customer_avatar,
+        c.phone AS customer_phone,
         
         -- Thợ được gán
         t.id AS technician_id,

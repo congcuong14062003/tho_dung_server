@@ -1,4 +1,5 @@
 import pool from "../config/db.js";
+import { generateId } from "../utils/crypto.js";
 
 export const ServiceModel = {
   // Lấy tất cả dịch vụ của 1 danh mục
@@ -30,9 +31,10 @@ export const ServiceModel = {
 
   // Tạo mới
   async create({ category_id, name, description, base_price }) {
+    const id = generateId("SER_");
     const [result] = await pool.query(
-      "INSERT INTO services (category_id, name, description, base_price) VALUES (?, ?, ?, ?)",
-      [category_id, name, description || "", base_price || 0]
+      "INSERT INTO services (id, category_id, name, description, base_price) VALUES (?, ?, ?, ?, ?)",
+      [id, category_id, name, description || "", base_price || 0]
     );
     return result.insertId;
   },

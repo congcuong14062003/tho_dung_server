@@ -2,28 +2,50 @@ import { RequestModel } from "../models/request.model.js";
 import { baseResponse } from "../utils/response.helper.js";
 
 export const RequestController = {
+  // ===============================
+  // 🔹 Khách tạo yêu cầu mới
+  // ===============================
   async create(req, res) {
     try {
       const {
-        user_id,
         service_id,
         name_request,
         description,
         address,
+        requested_date,
         requested_time,
       } = req.body;
 
-      // Lấy danh sách ảnh từ upload (nếu có)
+      const user_id = req.user.id; // ✅ lấy từ token
+
+      console.log("req.user:", req.user);
+      console.log("req.files: ", req.files);
+
       const images =
         req.files?.map(
           (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
         ) || [];
 
-      if (!user_id || !service_id || !address) {
+      if (!images || images.length < 1) {
         return baseResponse(res, {
           code: 400,
           status: false,
-          message: "Thiếu thông tin bắt buộc (user_id, service_id, address).",
+          message: "Vui lòng tải lên hình ảnh minh họa",
+        });
+      }
+
+      // ⚠️ Kiểm tra bắt buộc
+      if (
+        !name_request ||
+        !description ||
+        !address ||
+        !requested_time ||
+        !requested_date
+      ) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Vui lòng cung cấp đầy đủ thông tin bắt buộc",
         });
       }
 
@@ -33,12 +55,10 @@ export const RequestController = {
         name_request,
         description,
         address,
+        requested_date,
         requested_time,
+        images,
       });
-
-      if (images.length > 0) {
-        await RequestModel.addImages(requestId, user_id, images);
-      }
 
       return baseResponse(res, {
         code: 200,

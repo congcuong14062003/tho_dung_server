@@ -6,7 +6,7 @@ import { upload } from "../middlewares/upload.js";
 const router = express.Router();
 
 // Public: lấy danh sách danh mục
-router.post("/list-category", CategoryController.getListPaginated);
+router.post("/list-category", verifyToken, CategoryController.getListPaginated);
 
 // Chỉ admin được phép CRUD
 router.post(
@@ -29,6 +29,5 @@ router.post(
   authorizeRoles("admin"),
   CategoryController.delete
 );
-
 
 export default router;

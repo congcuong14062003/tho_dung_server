@@ -4,9 +4,6 @@ import dotenv from "dotenv";
 dotenv.config();
 
 export const UserController = {
-  // ====================================================
-  // 🔹 Lấy thông tin người dùng hiện tại (Profile)
-  // ====================================================
   async getProfile(req, res) {
     try {
       const userId = req.user.id;
@@ -36,12 +33,10 @@ export const UserController = {
     }
   },
 
-  // ====================================================
-  // 🔹 Cập nhật avatar người dùng
-  // ====================================================
   async updateAvatar(req, res) {
     try {
       const userId = req.user.id;
+      console.log("req.file: ", req.file);
 
       if (!req.file) {
         return baseResponse(res, {

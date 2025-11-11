@@ -97,8 +97,10 @@ export const CategoryController = {
   // ===============================
   async create(req, res) {
     try {
-      const { name, description } = req.body;
-      const icon = req.file ? `${process.env.URL_SERVER}/uploads/${req.file.filename}` : null;
+      const { name, description, color } = req.body;
+      const icon = req.file
+        ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`
+        : null;
 
       if (!name) {
         return baseResponse(res, {
@@ -116,7 +118,7 @@ export const CategoryController = {
           message: "Tên danh mục đã tồn tại!",
         });
       }
-      const id = await CategoryModel.create({ name, description, icon });
+      const id = await CategoryModel.create({ name, description, color, icon });
 
       return baseResponse(res, {
         code: 200,
@@ -139,10 +141,12 @@ export const CategoryController = {
   async update(req, res) {
     try {
       const id = req.params.id;
-      const { name, description } = req.body;
-      const icon = req.file ? `${process.env.URL_SERVER}/uploads/${req.file.filename}` : null;
+      const { name, description, color } = req.body;
+      const icon = req.file
+        ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`
+        : null;
 
-      // Kiểm tra tồn tại danh mục cần cập nhật
+      // Kiểm tra danh mục hiện tại
       const current = await CategoryModel.getById(id);
       if (!current) {
         return baseResponse(res, {
@@ -152,22 +156,20 @@ export const CategoryController = {
         });
       }
 
-      // Nếu có name mới -> kiểm tra trùng
-      if (name) {
-        const existed = await CategoryModel.getByName(name);
-        if (existed && existed.id !== Number(id)) {
-          return baseResponse(res, {
-            code: 409,
-            status: false,
-            message: "Tên danh mục đã tồn tại!",
-          });
-        }
+      // ✅ Kiểm tra trùng tên (loại trừ chính nó)
+      if (name && (await CategoryModel.checkNameExists(name, id))) {
+        return baseResponse(res, {
+          code: 409,
+          status: false,
+          message: "Tên danh mục đã tồn tại!",
+        });
       }
 
-      // Tiến hành cập nhật
+      // ✅ Cập nhật
       const affected = await CategoryModel.update(id, {
         name,
         description,
+        color,
         icon: icon || current.icon,
       });
 
