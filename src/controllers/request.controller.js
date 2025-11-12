@@ -150,6 +150,43 @@ export const RequestController = {
     }
   },
 
+  async getRequestsByTechnician(req, res) {
+    try {
+      const technicianId = req.user.id; // ✅ lấy từ token
+      const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
+
+      const limit = parseInt(size);
+      const offset = (parseInt(page) - 1) * limit;
+
+      const { data, total } = await RequestModel.getRequestsByTechnician({
+        technicianId,
+        keySearch,
+        status,
+        limit,
+        offset,
+      });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Lấy danh sách yêu cầu được gán cho thợ thành công",
+        data: {
+          total,
+          page: parseInt(page),
+          size: parseInt(size),
+          data,
+        },
+      });
+    } catch (error) {
+      console.error("getRequestsByTechnician:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi lấy danh sách yêu cầu được gán cho thợ",
+      });
+    }
+  },
+
   // ===============================
   // 🔹 Lấy chi tiết 1 yêu cầu
   // ===============================

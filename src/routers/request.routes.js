@@ -11,7 +11,7 @@ router.post(
   verifyToken,
   authorizeRoles("customer"),
   upload.array("images", 5), // ✅ đổi từ icon sang images (tối đa 5 ảnh)
-  convertHeicToJpg, // ✅ thêm bước chuyển HEIC sang JPG 
+  // convertHeicToJpg, // ✅ thêm bước chuyển HEIC sang JPG 
   RequestController.create
 );
 router.post(
@@ -25,6 +25,15 @@ router.post(
   verifyToken,
   RequestController.getRequestsByUser
 )
+
+// Lấy danh sách yêu cầu được gán cho thợ
+router.post(
+  "/get-requests-by-technician",
+  verifyToken,
+  authorizeRoles("technician"),
+  RequestController.getRequestsByTechnician
+);
+
 
 router.get("/:id/detail-request", verifyToken, RequestController.getRequestDetail);
 export default router;
