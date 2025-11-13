@@ -1,0 +1,263 @@
+DROP DATABASE IF EXISTS thodung;
+CREATE DATABASE thodung CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE thodung;
+
+-- ==========================
+-- USERS
+-- ==========================
+CREATE TABLE users (
+  id VARCHAR(50) PRIMARY KEY,
+  full_name VARCHAR(100) NOT NULL,
+  phone VARCHAR(15) UNIQUE NOT NULL,
+  password_hash VARCHAR(255) NOT NULL,
+  id_card VARCHAR(20),
+  avatar_link VARCHAR(255) DEFAULT 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
+  role ENUM('customer','technician','admin') DEFAULT 'customer',
+  status ENUM('active','inactive','pending') DEFAULT 'pending',
+  verified BOOLEAN DEFAULT FALSE,
+  otp_code VARCHAR(10),
+  otp_expiry DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+-- ========================== -- TECHNICIAN PROFILES -- ========================== -- ========================== -- 
+ CREATE TABLE technician_profiles ( 
+ id INT AUTO_INCREMENT PRIMARY KEY, 
+ user_id VARCHAR(50) NOT NULL, 
+ skill_category_id VARCHAR(50) NOT NULL, -- Liên kết với danh mục kỹ năng 
+ experience_years INT DEFAULT 0, -- Số năm kinh nghiệm 
+ working_area VARCHAR(255), -- Khu vực làm việc 
+ rating_avg DECIMAL(2,1) DEFAULT 0.0, -- Điểm trung bình đánh giá 
+ description TEXT, -- Mô tả chi tiết kỹ năng 
+ certifications TEXT, -- Bằng cấp, chứng chỉ 
+ created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
+ updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, 
+ FOREIGN KEY (user_id) REFERENCES users(id), 
+ FOREIGN KEY (skill_category_id) REFERENCES service_categories(id) );
+ 
+ 
+-- ==========================
+-- SERVICE CATEGORIES
+-- ==========================
+CREATE TABLE service_categories (
+  id VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  icon VARCHAR(255),
+  status TINYINT(1) DEFAULT 1,
+  color VARCHAR(10) DEFAULT '#4A90E2',
+  `order` INT DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+
+
+-- ==========================
+-- SERVICES
+-- ==========================
+CREATE TABLE services (
+  id VARCHAR(50) PRIMARY KEY,
+  category_id VARCHAR(50) NOT NULL,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  base_price VARCHAR(20) DEFAULT '0',
+  unit VARCHAR(50),
+  status TINYINT(1) DEFAULT 1,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (category_id) REFERENCES service_categories(id)
+);
+
+-- ==========================
+-- REQUESTS
+-- ==========================
+CREATE TABLE requests (
+  id VARCHAR(50) PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL,
+  service_id VARCHAR(50) NOT NULL,
+  name_request VARCHAR(255),
+  description TEXT,
+  address VARCHAR(255),
+  requested_date VARCHAR(10),
+  requested_time VARCHAR(10), 
+  status ENUM('pending','assigning', 'assigned','quoted','in_progress','completed','cancelled','maintenance') DEFAULT 'pending',
+  cancel_reason TEXT NULL,
+  cancel_by VARCHAR(50) NULL,
+  completed_at DATETIME NULL,
+  technician_id VARCHAR(50),
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (service_id) REFERENCES services(id),
+  FOREIGN KEY (technician_id) REFERENCES users(id),
+  FOREIGN KEY (cancel_by) REFERENCES users(id)
+);
+
+-- ALTER TABLE requests 
+-- MODIFY COLUMN status 
+-- ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'completed', 'cancelled', 'maintenance') 
+-- DEFAULT 'pending';
+
+
+-- ==========================
+-- REQUEST IMAGES
+-- ==========================
+CREATE TABLE request_images (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  uploaded_by VARCHAR(50) NOT NULL,
+  image_url VARCHAR(255) NOT NULL,
+  type ENUM('pending','survey', "completed") DEFAULT 'pending',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id),
+  FOREIGN KEY (uploaded_by) REFERENCES users(id)
+);
+-- ALTER TABLE request_images 
+-- MODIFY COLUMN type 
+-- ENUM('pending','survey', 'completed') 
+-- DEFAULT 'pending';
+-- ==========================
+-- QUOTATIONS
+-- ==========================
+CREATE TABLE quotations (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  technician_id VARCHAR(50) NOT NULL,
+  total_price DECIMAL(10,2) DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id),
+  FOREIGN KEY (technician_id) REFERENCES users(id)
+);
+
+CREATE TABLE quotation_items (
+  id VARCHAR(50) PRIMARY KEY,
+  quotation_id VARCHAR(50) NOT NULL,
+  name VARCHAR(255) NOT NULL,
+  price DECIMAL(10,2) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (quotation_id) REFERENCES quotations(id)
+);
+
+-- ==========================
+-- PAYMENTS
+-- ==========================
+CREATE TABLE payments (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  amount DECIMAL(10,2) NOT NULL,
+  payment_method ENUM('qr', 'cash') DEFAULT 'qr',
+  payment_status ENUM('pending','paid','failed','refunded') DEFAULT 'pending',
+  transaction_id VARCHAR(100),
+  paid_at DATETIME,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id)
+);
+
+CREATE TABLE payment_proofs (
+  id VARCHAR(50) PRIMARY KEY,
+  payment_id VARCHAR(50) NOT NULL,
+  uploaded_by VARCHAR(50) NOT NULL,
+  image_url VARCHAR(255) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (payment_id) REFERENCES payments(id),
+  FOREIGN KEY (uploaded_by) REFERENCES users(id)
+);
+
+-- ==========================
+-- REVIEWS
+-- ==========================
+CREATE TABLE reviews (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  user_id VARCHAR(50) NOT NULL,
+  technician_id VARCHAR(50) NOT NULL,
+  rating INT CHECK (rating BETWEEN 1 AND 5),
+  comment TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id),
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (technician_id) REFERENCES users(id)
+);
+
+-- ==========================
+-- REQUEST ASSIGNMENTS
+-- ==========================
+CREATE TABLE request_assignments (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  old_technician_id VARCHAR(50),
+  new_technician_id VARCHAR(50) NOT NULL,
+  assigned_by VARCHAR(50) NOT NULL,
+  reason TEXT,
+  assigned_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id),
+  FOREIGN KEY (old_technician_id) REFERENCES users(id),
+  FOREIGN KEY (new_technician_id) REFERENCES users(id),
+  FOREIGN KEY (assigned_by) REFERENCES users(id)
+);
+
+-- ==========================
+-- REQUEST STATUS LOGS
+-- ==========================
+CREATE TABLE request_status_logs (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  old_status VARCHAR(50),
+  new_status VARCHAR(50),
+  changed_by VARCHAR(50) NOT NULL,
+  reason TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id),
+  FOREIGN KEY (changed_by) REFERENCES users(id)
+);
+
+-- ==========================
+-- MAINTENANCE REQUESTS
+-- ==========================
+CREATE TABLE maintenance_requests (
+  id VARCHAR(50) PRIMARY KEY,
+  original_request_id VARCHAR(50) NOT NULL,
+  technician_id VARCHAR(50),
+  description TEXT,
+  status ENUM('pending','in_progress','completed') DEFAULT 'pending',
+  created_by VARCHAR(50) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (original_request_id) REFERENCES requests(id),
+  FOREIGN KEY (technician_id) REFERENCES users(id),
+  FOREIGN KEY (created_by) REFERENCES users(id)
+);
+
+-- ==========================
+-- COMPLAINTS
+-- ==========================
+CREATE TABLE complaints (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  complainant_id VARCHAR(50) NOT NULL,
+  against_id VARCHAR(50),
+  title VARCHAR(255),
+  description TEXT,
+  status ENUM('pending','reviewing','resolved','rejected') DEFAULT 'pending',
+  resolution TEXT,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  FOREIGN KEY (request_id) REFERENCES requests(id),
+  FOREIGN KEY (complainant_id) REFERENCES users(id),
+  FOREIGN KEY (against_id) REFERENCES users(id)
+);
+
+-- ==========================
+-- NOTIFICATIONS
+-- ==========================
+CREATE TABLE notifications (
+  id VARCHAR(50) PRIMARY KEY,
+  user_id VARCHAR(50) NOT NULL,
+  title VARCHAR(100),
+  message TEXT,
+  type ENUM('system','job','payment','review') DEFAULT 'system',
+  is_read BOOLEAN DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (user_id) REFERENCES users(id)
+);
