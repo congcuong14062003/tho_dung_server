@@ -110,7 +110,7 @@ export const CategoryController = {
         });
       }
       // 🔍 Kiểm tra danh mục đã tồn tại chưa
-      const existed = await CategoryModel.getByName(name);
+      const existed = await CategoryModel.checkNameExists(name);
       if (existed) {
         return baseResponse(res, {
           code: 409, // conflict

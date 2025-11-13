@@ -191,6 +191,9 @@ export const RequestModel = {
     return { data: rows, total };
   },
 
+  // ===============================
+  // 🔹 Lấy danh sách yêu cầu của khách hàng
+  // ===============================
   async getRequestsByUser({
     userId,
     keySearch = "",
@@ -268,6 +271,9 @@ export const RequestModel = {
     return { data: rows, total };
   },
 
+  // ===============================
+  // 🔹 Lấy danh sách yêu cầu được gán cho thợ
+  // ===============================
   async getRequestsByTechnician({
     technicianId,
     keySearch = "",
@@ -355,6 +361,12 @@ export const RequestModel = {
     return { data: rows, total };
   },
 
+  // ===============================
+  // 🔹 Lấy chi tiết yêu cầu
+  // ===============================
+  // ===============================
+  // 🔹 Lấy chi tiết yêu cầu
+  // ===============================
   async getRequestDetail(id) {
     // 1️⃣ Lấy thông tin chính của yêu cầu
     const [rows] = await db.query(
@@ -401,7 +413,7 @@ export const RequestModel = {
     if (rows.length === 0) return null;
     const request = rows[0];
 
-    // 2️⃣ Lấy ảnh khảo sát
+    // 2️⃣ Lấy ảnh liên quan
     const [images] = await db.query(
       `
     SELECT 
@@ -418,25 +430,37 @@ export const RequestModel = {
       [id]
     );
 
-    // Lấy danh sách báo giá (mỗi dòng là 1 mục)
-    const [quotations] = await db.query(
+    // 3️⃣ Lấy báo giá
+    const [quotationRows] = await db.query(
       `
     SELECT 
-      id,
-      name,
-      price
-    FROM quotations
-    WHERE request_id = ?
-    ORDER BY created_at ASC
-  `,
+      qi.id AS item_id,
+      qi.name AS item_name,
+      qi.price AS item_price,
+      q.total_price
+    FROM quotations q
+    LEFT JOIN quotation_items qi ON q.id = qi.quotation_id
+    WHERE q.request_id = ?
+    ORDER BY qi.created_at ASC
+    `,
       [id]
     );
 
-    // Tính tổng giá báo giá
-    const total_price = quotations.reduce(
-      (sum, q) => sum + Number(q.price || 0),
-      0
-    );
+    let quotationData = {
+      data: [],
+      total_price: 0,
+    };
+
+    if (quotationRows.length > 0) {
+      quotationData = {
+        data: quotationRows.map((row) => ({
+          id: row.item_id,
+          name: row.item_name,
+          price: Number(row.item_price),
+        })),
+        total_price: Number(quotationRows[0].total_price || 0),
+      };
+    }
 
     // 4️⃣ Gom dữ liệu trả về
     return {
@@ -480,17 +504,237 @@ export const RequestModel = {
       survey_images: images.filter((img) => img.type === "survey"),
       scene_images: images.filter((img) => img.type === "pending"),
 
-      quotations:
-        quotations.length === 0
-          ? null
-          : {
-              data: quotations.map((q) => ({
-                id: q.id,
-                name: q.name,
-                price: Number(q.price),
-              })),
-              total_price: total_price,
-            },
+      quotations: quotationData,
     };
+  },
+
+  // ===============================
+  // 🔹 Admin gán yêu cầu cho thợ
+  // ===============================
+  async assignRequest({ request_id, technician_id, admin_id, reason }) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      // Lấy thợ cũ (nếu có)
+      const [[old]] = await connection.query(
+        "SELECT technician_id, status FROM requests WHERE id = ?",
+        [request_id]
+      );
+      const oldTech = old?.technician_id || null;
+
+      // Cập nhật yêu cầu
+      await connection.query(
+        `
+        UPDATE requests 
+        SET technician_id = ?, status = 'assigning', updated_at = NOW()
+        WHERE id = ?
+        `,
+        [technician_id, request_id]
+      );
+
+      // Ghi log gán
+      await connection.query(
+        `
+        INSERT INTO request_assignments (id, request_id, old_technician_id, new_technician_id, assigned_by, reason)
+        VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [
+          generateId("ASSIGN"),
+          request_id,
+          oldTech,
+          technician_id,
+          admin_id,
+          reason || "Gán yêu cầu mới cho thợ",
+        ]
+      );
+
+      // Ghi log trạng thái
+      await connection.query(
+        `
+        INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
+        VALUES (?, ?, ?, ?, ?, ?)
+        `,
+        [
+          generateId("LOG"),
+          request_id,
+          old?.status || "pending",
+          "assigning",
+          admin_id,
+          "Admin gán yêu cầu cho thợ",
+        ]
+      );
+
+      await connection.commit();
+      connection.release();
+      return { request_id, technician_id };
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
+  },
+
+  // ===============================
+  // 🔹 Thợ phản hồi (chấp nhận / từ chối)
+  // ===============================
+  async technicianResponse({ request_id, technician_id, action, reason }) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      // Lấy thông tin hiện tại của request
+      const [[request]] = await connection.query(
+        "SELECT status FROM requests WHERE id = ? AND technician_id = ?",
+        [request_id, technician_id]
+      );
+
+      if (!request)
+        throw new Error(
+          "Yêu cầu không tồn tại hoặc không được gán cho thợ này"
+        );
+
+      let newStatus = "";
+      let logReason = "";
+      let newTechnicianId = technician_id;
+
+      if (action === "accept") {
+        newStatus = "assigned";
+        logReason = "Thợ chấp nhận yêu cầu";
+      } else if (action === "reject") {
+        newStatus = "pending"; // quay lại trạng thái chờ admin xử lý
+        logReason = reason || "Thợ từ chối yêu cầu";
+        newTechnicianId = null; // ❗ bỏ gán thợ
+      } else {
+        throw new Error(
+          "Hành động không hợp lệ. Chỉ chấp nhận 'accept' hoặc 'reject'"
+        );
+      }
+
+      // Cập nhật trạng thái + xử lý gán lại thợ (nếu từ chối)
+      await connection.query(
+        `
+      UPDATE requests 
+      SET status = ?, technician_id = ?, updated_at = NOW()
+      WHERE id = ?
+      `,
+        [newStatus, newTechnicianId, request_id]
+      );
+
+      // Ghi log trạng thái
+      await connection.query(
+        `
+      INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
+      VALUES (?, ?, ?, ?, ?, ?)
+      `,
+        [
+          generateId("LOG"),
+          request_id,
+          request.status,
+          newStatus,
+          technician_id,
+          logReason,
+        ]
+      );
+
+      await connection.commit();
+      connection.release();
+
+      return { request_id, status: newStatus };
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
+  },
+
+  async updateStatus(requestId, status) {
+    await db.query(`UPDATE requests SET status = ? WHERE id = ?`, [
+      status,
+      requestId,
+    ]);
+  },
+
+  async insertStatusLog({
+    id,
+    requestId,
+    oldStatus,
+    newStatus,
+    changedBy,
+    reason,
+  }) {
+    await db.query(
+      `INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+      [id, requestId, oldStatus, newStatus, changedBy, reason]
+    );
+  },
+
+  async insertSurveyImages(requestId, technicianId, images) {
+    const values = images.map((url) => [
+      requestId,
+      technicianId,
+      url,
+      "survey",
+    ]);
+    await db.query(
+      `INSERT INTO request_images (request_id, uploaded_by, image_url, type)
+       VALUES ?`,
+      [values]
+    );
+  },
+
+  async insertQuotationItems(requestId, technicianId, items) {
+    for (const item of items) {
+      await db.query(
+        `INSERT INTO quotations (id, request_id, technician_id, name, price)
+         VALUES (UUID(), ?, ?, ?, ?)`,
+        [requestId, technicianId, item.name, item.price]
+      );
+    }
+  },
+
+  // ===============================
+  // 🔹 Thợ gửi báo giá (Model)
+  // ===============================
+  async createQuotation({ request_id, technician_id, items }) {
+    const connection = await db.getConnection();
+    try {
+      await connection.beginTransaction();
+
+      const quotationId = generateId("QUOTE");
+
+      // 1️⃣ Thêm vào bảng quotations
+      const total_price = items.reduce(
+        (sum, item) => sum + Number(item.price || 0),
+        0
+      );
+      await connection.query(
+        `INSERT INTO quotations (id, request_id, technician_id, total_price)
+       VALUES (?, ?, ?, ?)`,
+        [quotationId, request_id, technician_id, total_price]
+      );
+
+      // 2️⃣ Thêm từng item chi tiết
+      const itemValues = items.map((item) => [
+        generateId("QITEM"),
+        quotationId,
+        item.name,
+        item.price,
+      ]);
+      await connection.query(
+        `INSERT INTO quotation_items (id, quotation_id, name, price) VALUES ?`,
+        [itemValues]
+      );
+
+      await connection.commit();
+      connection.release();
+
+      return quotationId;
+    } catch (error) {
+      await connection.rollback();
+      connection.release();
+      throw error;
+    }
   },
 };

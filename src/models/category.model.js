@@ -67,7 +67,7 @@ export const CategoryModel = {
   },
 
   // ✅ Thêm mới (admin)
-  async create({ name, description, icon }) {
+  async create({ name, description, color, icon }) {
     const id = generateId("CAT_"); // sinh ID chuỗi dạng CAT_xxxxxxxx
     const [result] = await db.query(
       "INSERT INTO service_categories (id, name, description, color, icon) VALUES (?, ?, ?, ?, ?)",
