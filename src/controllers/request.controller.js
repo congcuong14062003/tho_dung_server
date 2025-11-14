@@ -1,3 +1,4 @@
+import db from "../config/db.js";
 import { RequestModel } from "../models/request.model.js";
 import { generateId } from "../utils/crypto.js";
 import { baseResponse } from "../utils/response.helper.js";
@@ -353,40 +354,6 @@ export const RequestController = {
     }
   },
 
-  // Thợ tải ảnh khảo sát
-  async uploadSurveyImages(req, res) {
-    try {
-      const technicianId = req.user.id;
-      const { request_id } = req.body;
-      const images =
-        req.files?.map(
-          (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
-        ) || [];
-
-      if (images.length === 0)
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Chưa có ảnh khảo sát",
-        });
-
-      await RequestModel.insertSurveyImages(request_id, technicianId, images);
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Đã tải ảnh khảo sát",
-      });
-    } catch (error) {
-      console.error("uploadSurveyImages:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server",
-      });
-    }
-  },
-
   // ===============================
   // 🔹 Thợ gửi báo giá
   // ===============================
@@ -396,7 +363,6 @@ export const RequestController = {
       const { request_id, items } = req.body;
 
       console.log("req.body: ", req.body);
-      
 
       if (!items || !Array.isArray(items) || items.length === 0)
         return baseResponse(res, {
@@ -437,6 +403,146 @@ export const RequestController = {
         code: 500,
         status: false,
         message: "Lỗi server khi gửi báo giá",
+      });
+    }
+  },
+
+  // ===============================
+  // 🔹 Khách hàng chấp nhận hoặc từ chối báo giá
+  // ===============================
+
+  async quotationResponse(req, res) {
+    try {
+      const userId = req.user.id;
+      const { request_id, action, reason } = req.body;
+      // action = "accept" | "reject"
+
+      if (!["accept", "reject"].includes(action)) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Hành động không hợp lệ",
+        });
+      }
+
+      const result = await RequestModel.quotationResponse({
+        request_id,
+        user_id: userId,
+        action,
+        reason,
+      });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message:
+          action === "accept"
+            ? "Bạn đã chấp nhận báo giá"
+            : "Bạn đã từ chối báo giá",
+        data: result,
+      });
+    } catch (error) {
+      console.error("quotationResponse:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi cập nhật trạng thái báo giá",
+      });
+    }
+  },
+
+  // ===========================================
+  // 🔹 Cập nhật tiến độ đầu việc theo báo giá cha(quotation_item)
+  // ===========================================
+  async updateItemProgress(req, res) {
+    try {
+      const technicianId = req.user.id;
+      const { items = [] } = req.body;
+
+      if (!Array.isArray(items) || items.length === 0) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Danh sách items không hợp lệ",
+        });
+      }
+
+      for (const item of items) {
+        const { id: item_id, status, note, images = [] } = item;
+
+        if (!item_id) continue;
+
+        const imageArray = Array.isArray(images) ? images : [];
+
+        // 1. Kiểm tra item có tồn tại
+        const [rows] = await db.query(
+          `SELECT status FROM quotation_items WHERE id = ?`,
+          [item_id]
+        );
+
+        if (rows.length === 0) {
+          console.warn("Item không tồn tại:", item_id);
+          continue;
+        }
+
+        const oldStatus = rows[0].status;
+
+        // 2. Cập nhật item
+        await db.query(
+          `UPDATE quotation_items 
+         SET status = ?, note = ?
+         WHERE id = ?`,
+          [status, note, item_id]
+        );
+
+        // ===============================
+        // 🔥 3. Cập nhật ảnh — replace
+        // ===============================
+
+        // Xóa toàn bộ ảnh cũ
+        await db.query(
+          `DELETE FROM quotation_items_images WHERE quotation_item_id = ?`,
+          [item_id]
+        );
+
+        // Chèn ảnh mới
+        if (imageArray.length > 0) {
+          const values = imageArray.map((url) => [
+            generateId("QIMG"),
+            item_id,
+            technicianId,
+            url,
+          ]);
+
+          await db.query(
+            `INSERT INTO quotation_items_images
+           (id, quotation_item_id, uploaded_by, image_url)
+           VALUES ?`,
+            [values]
+          );
+        }
+
+        // 4. Ghi log
+        await db.query(
+          `INSERT INTO quotation_items_logs
+         (id, quotation_item_id, old_status, new_status, note, changed_by)
+         VALUES (?, ?, ?, ?, ?, ?)`,
+          [generateId("QLOG"), item_id, oldStatus, status, note, technicianId]
+        );
+      }
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Cập nhật tiến độ đầu việc thành công",
+      });
+    } catch (error) {
+      console.error("updateItemProgress:", error);
+
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi cập nhật tiến độ đầu việc",
       });
     }
   },

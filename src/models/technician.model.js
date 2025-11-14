@@ -108,4 +108,6 @@ export const TechnicianModel = {
 
     return { data: rows, total };
   },
+
+  
 };

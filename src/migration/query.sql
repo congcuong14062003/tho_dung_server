@@ -81,7 +81,7 @@ CREATE TABLE requests (
   address VARCHAR(255),
   requested_date VARCHAR(10),
   requested_time VARCHAR(10), 
-  status ENUM('pending','assigning', 'assigned','quoted','in_progress','completed','cancelled','maintenance') DEFAULT 'pending',
+  status ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'customer_review', 'completed', 'cancelled', 'maintenance') DEFAULT 'pending',
   cancel_reason TEXT NULL,
   cancel_by VARCHAR(50) NULL,
   completed_at DATETIME NULL,
@@ -96,7 +96,7 @@ CREATE TABLE requests (
 
 -- ALTER TABLE requests 
 -- MODIFY COLUMN status 
--- ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'completed', 'cancelled', 'maintenance') 
+-- ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'customer_review', 'completed', 'cancelled', 'maintenance') 
 -- DEFAULT 'pending';
 
 
@@ -134,10 +134,39 @@ CREATE TABLE quotation_items (
   id VARCHAR(50) PRIMARY KEY,
   quotation_id VARCHAR(50) NOT NULL,
   name VARCHAR(255) NOT NULL,
+  status ENUM('pending', 'in_progress', 'completed') NOT NULL DEFAULT 'pending',
+  note TEXT,
+  report_by VARCHAR(50) NOT NULL,
   price DECIMAL(10,2) NOT NULL,
+  reason TEXT,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (quotation_id) REFERENCES quotations(id)
+  FOREIGN KEY (quotation_id) REFERENCES quotations(id),
+  FOREIGN KEY (report_by) REFERENCES users(id)
 );
+
+CREATE TABLE quotation_items_images (
+  id VARCHAR(50) PRIMARY KEY,
+  quotation_item_id VARCHAR(50) NOT NULL,
+  uploaded_by VARCHAR(50) NOT NULL,
+  image_url VARCHAR(255) NOT NULL,
+  image_type ENUM('before', 'during', 'after') DEFAULT 'during',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (quotation_item_id) REFERENCES quotation_items(id),
+  FOREIGN KEY (uploaded_by) REFERENCES users(id)
+);
+
+CREATE TABLE quotation_items_logs (
+  id VARCHAR(50) PRIMARY KEY,
+  quotation_item_id VARCHAR(50) NOT NULL,
+  old_status ENUM('pending', 'in_progress', 'completed') NULL,
+  new_status ENUM('pending', 'in_progress', 'completed') NOT NULL,
+  note TEXT,
+  changed_by VARCHAR(50) NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY (quotation_item_id) REFERENCES quotation_items(id),
+  FOREIGN KEY (changed_by) REFERENCES users(id)
+);
+
 
 -- ==========================
 -- PAYMENTS

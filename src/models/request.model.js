@@ -364,9 +364,6 @@ export const RequestModel = {
   // ===============================
   // 🔹 Lấy chi tiết yêu cầu
   // ===============================
-  // ===============================
-  // 🔹 Lấy chi tiết yêu cầu
-  // ===============================
   async getRequestDetail(id) {
     // 1️⃣ Lấy thông tin chính của yêu cầu
     const [rows] = await db.query(
@@ -430,38 +427,67 @@ export const RequestModel = {
       [id]
     );
 
-    // 3️⃣ Lấy báo giá
+    // 3️⃣ Lấy báo giá + item + ảnh theo từng item
     const [quotationRows] = await db.query(
       `
-    SELECT 
-      qi.id AS item_id,
-      qi.name AS item_name,
-      qi.price AS item_price,
-      q.total_price
-    FROM quotations q
-    LEFT JOIN quotation_items qi ON q.id = qi.quotation_id
-    WHERE q.request_id = ?
-    ORDER BY qi.created_at ASC
+      SELECT 
+        q.id AS quotation_id,
+        q.total_price,
+
+        qi.id AS item_id,
+        qi.name AS item_name,
+        qi.price AS item_price,
+        qi.status AS item_status,
+        qi.note AS item_note,
+
+        ii.id AS image_id,
+        ii.image_url AS image_url,
+        ii.created_at AS image_created_at
+
+      FROM quotations q
+      LEFT JOIN quotation_items qi 
+            ON q.id = qi.quotation_id
+      LEFT JOIN quotation_items_images ii
+            ON qi.id = ii.quotation_item_id
+      WHERE q.request_id = ?
+      ORDER BY qi.created_at ASC, ii.created_at ASC
     `,
       [id]
     );
+    let quotationData = null;
 
-    let quotationData = {
-      data: [],
-      total_price: 0,
-    };
+    if (quotationRows.length > 0 && quotationRows[0].quotation_id) {
+      const mapItems = {};
 
-    if (quotationRows.length > 0) {
+      quotationRows.forEach((row) => {
+        if (!row.item_id) return;
+
+        if (!mapItems[row.item_id]) {
+          mapItems[row.item_id] = {
+            id: row.item_id,
+            name: row.item_name,
+            price: Number(row.item_price),
+            status: row.item_status,
+            note: row.item_note,
+            images: [],
+          };
+        }
+
+        // Thêm ảnh nếu có
+        if (row.image_url) {
+          mapItems[row.item_id].images.push({
+            id: row.image_id,
+            url: row.image_url,
+            created_at: row.image_created_at,
+          });
+        }
+      });
+
       quotationData = {
-        data: quotationRows.map((row) => ({
-          id: row.item_id,
-          name: row.item_name,
-          price: Number(row.item_price),
-        })),
-        total_price: Number(quotationRows[0].total_price || 0),
+        total_price: Number(quotationRows[0].total_price),
+        data: Object.values(mapItems),
       };
     }
-
     // 4️⃣ Gom dữ liệu trả về
     return {
       id: request.id,
@@ -648,6 +674,9 @@ export const RequestModel = {
     }
   },
 
+  // ===============================
+  // 🔹 Cập nhật trạng thái yêu cầu
+  // ===============================
   async updateStatus(requestId, status) {
     await db.query(`UPDATE requests SET status = ? WHERE id = ?`, [
       status,
@@ -655,6 +684,9 @@ export const RequestModel = {
     ]);
   },
 
+  // ===============================
+  // 🔹 Ghi log trạng thái
+  // ===============================
   async insertStatusLog({
     id,
     requestId,
@@ -670,6 +702,9 @@ export const RequestModel = {
     );
   },
 
+  // ===============================
+  // 🔹 Thợ tải ảnh khảo sát lên
+  // ===============================
   async insertSurveyImages(requestId, technicianId, images) {
     const values = images.map((url) => [
       requestId,
@@ -684,6 +719,9 @@ export const RequestModel = {
     );
   },
 
+  // ===============================
+  // 🔹 Thêm mục báo giá
+  // ===============================
   async insertQuotationItems(requestId, technicianId, items) {
     for (const item of items) {
       await db.query(
@@ -721,9 +759,10 @@ export const RequestModel = {
         quotationId,
         item.name,
         item.price,
+        technician_id,
       ]);
       await connection.query(
-        `INSERT INTO quotation_items (id, quotation_id, name, price) VALUES ?`,
+        `INSERT INTO quotation_items (id, quotation_id, name, price, report_by) VALUES ?`,
         [itemValues]
       );
 
@@ -736,5 +775,55 @@ export const RequestModel = {
       connection.release();
       throw error;
     }
+  },
+
+  // ===============================
+  // 🔹 Khách chấp nhận hoặc từ chối báo giá
+  // ===============================
+  async quotationResponse({ request_id, user_id, action, reason }) {
+    // 1️⃣ Lấy thông tin yêu cầu
+    const [rows] = await db.query(`SELECT status FROM requests WHERE id = ?`, [
+      request_id,
+    ]);
+
+    if (rows.length === 0) throw new Error("Không tồn tại yêu cầu");
+
+    const oldStatus = rows[0].status;
+
+    // 2️⃣ Xác định trạng thái mới
+    const newStatus = action === "accept" ? "in_progress" : "cancelled";
+    const cancelReason = reason === "accept" ? null : reason;
+    const userCancel = user_id === "accept" ? null : user_id;
+
+    // 3️⃣ Cập nhật yêu cầu
+    await db.query(
+      `UPDATE requests SET status = ?, cancel_reason = ?, cancel_by = ?  WHERE id = ?`,
+      [newStatus, cancelReason, userCancel, request_id]
+    );
+
+    // 4️⃣ Lưu log thay đổi trạng thái
+    await db.query(
+      `
+      INSERT INTO request_status_logs 
+      (id, request_id, old_status, new_status, changed_by, reason)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `,
+      [
+        generateId("LOG"),
+        request_id,
+        oldStatus,
+        newStatus,
+        user_id,
+        action === "accept"
+          ? "Khách hàng chấp nhận báo giá"
+          : reason || "Khách hàng từ chối báo giá",
+      ]
+    );
+
+    return {
+      request_id,
+      old_status: oldStatus,
+      new_status: newStatus,
+    };
   },
 };

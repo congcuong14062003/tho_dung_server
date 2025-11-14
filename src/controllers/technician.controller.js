@@ -1,7 +1,9 @@
 import { baseResponse } from "../utils/response.helper.js";
 import { TechnicianModel } from "../models/technician.model.js";
+import { UserModel } from "../models/user.model.js";
 
 export const TechnicianController = {
+  // Lấy danh sách thợ với phân trang và tìm kiếm
   async getAllTechnicians(req, res) {
     try {
       const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
@@ -36,6 +38,108 @@ export const TechnicianController = {
         code: 500,
         status: false,
         message: "Lỗi server khi lấy danh sách thợ",
+      });
+    }
+  },
+
+  // ============================
+  // 1️⃣ User đăng ký lên làm thợ
+  // ============================
+  async applyToBecomeTechnician(req, res) {
+    try {
+      const userId = req.user.id;
+      const {
+        skill_category_id,
+        experience_years,
+        working_area,
+        description,
+        certifications,
+      } = req.body;
+
+      // Check user tồn tại & chưa phải technician
+      const user = await UserModel.getById(userId);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "User không tồn tại",
+        });
+      }
+
+      if (user.role === "technician") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Bạn đã là thợ rồi",
+        });
+      }
+
+      // Cập nhật trạng thái user -> pending thợ
+      await UserModel.update(userId, { role: "technician", status: "pending" });
+
+      // Tạo hồ sơ thợ
+      await TechnicianModel.createProfile({
+        user_id: userId,
+        skill_category_id,
+        experience_years,
+        working_area,
+        description,
+        certifications,
+      });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Đăng ký làm thợ thành công. Đang chờ admin duyệt.",
+      });
+    } catch (err) {
+      console.error(err);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi đăng ký làm thợ",
+      });
+    }
+  },
+
+  // ============================
+  // 2️⃣ Admin duyệt thợ
+  // ============================
+  async approveTechnician(req, res) {
+    try {
+      const { userId } = req.params;
+
+      const user = await UserModel.getById(userId);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "User không tồn tại",
+        });
+      }
+
+      if (user.status === "active") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Người này đã là thợ (đã duyệt).",
+        });
+      }
+
+      // cập nhật trạng thái ACTIVE
+      await UserModel.updateUser(userId, { status: "active" });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Duyệt thợ thành công!",
+      });
+    } catch (err) {
+      console.error(err);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi duyệt thợ",
       });
     }
   },

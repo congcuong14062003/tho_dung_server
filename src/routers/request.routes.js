@@ -76,4 +76,20 @@ router.post(
   RequestController.createQuotation
 );
 
+// Khách hàng chấp nhận hoặc từ chối báo giá
+router.post(
+  "/quotation/response",
+  verifyToken,
+  authorizeRoles("customer"),
+  RequestController.quotationResponse
+);
+
+// Thợ cập nhật tiến độ công việc
+router.post(
+  "/quotation/update-progress",
+  verifyToken,
+  authorizeRoles("customer","technician"),
+  RequestController.updateItemProgress
+);
+
 export default router;

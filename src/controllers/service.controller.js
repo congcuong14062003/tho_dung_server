@@ -9,6 +9,19 @@ export const ServiceController = {
   async getByCategory(req, res) {
     try {
       const categoryId = req.params.categoryId;
+      const keySearch = req.query.keySearch || "";
+
+      // 🔥 Nếu FE gửi "all" → lấy toàn bộ dịch vụ
+      if (categoryId === "all") {
+        const services = await ServiceModel.getAll(keySearch);
+        return baseResponse(res, {
+          code: 200,
+          message: "Lấy tất cả dịch vụ thành công",
+          data: { category: null, services },
+        });
+      }
+
+      // 🔥 Ngược lại, lấy theo danh mục như cũ
       const category = await CategoryModel.getById(categoryId);
       if (!category) {
         return baseResponse(res, {
@@ -18,10 +31,10 @@ export const ServiceController = {
         });
       }
 
-      const services = await ServiceModel.getByCategory(categoryId);
+      const services = await ServiceModel.getByCategory(categoryId, keySearch);
       return baseResponse(res, {
         code: 200,
-        message: "Lấy danh sách dịch vụ thành công",
+        message: "Lấy dịch vụ theo danh mục thành công",
         data: { category, services },
       });
     } catch (error) {
