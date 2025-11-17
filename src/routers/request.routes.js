@@ -2,6 +2,7 @@ import express from "express";
 import { RequestController } from "../controllers/request.controller.js";
 import { convertHeicToJpg, upload } from "../middlewares/upload.js";
 import { authorizeRoles, verifyToken } from "../middlewares/auth.middleware.js";
+import { PaymentController } from "../controllers/payment.controller.js";
 
 const router = express.Router();
 
@@ -88,8 +89,33 @@ router.post(
 router.post(
   "/quotation/update-progress",
   verifyToken,
-  authorizeRoles("customer","technician"),
+  authorizeRoles("customer", "technician"),
   RequestController.updateItemProgress
+);
+
+// Khách hoàn tất yêu cầu (set completed)
+router.post(
+  "/set-completed",
+  verifyToken,
+  authorizeRoles("customer"),
+  RequestController.setCompleted
+);
+
+// Upload hóa đơn thanh toán (customer)
+router.post(
+  "/payment/upload-proof",
+  verifyToken,
+  authorizeRoles("customer"),
+  upload.array("images", 5),
+  PaymentController.uploadProof
+);
+
+// Admin duyệt hoặc từ chối hóa đơn
+router.post(
+  "/admin/payment/verify-payment",
+  verifyToken,
+  authorizeRoles("admin"),
+  PaymentController.verifyPayment
 );
 
 export default router;

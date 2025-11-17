@@ -452,12 +452,24 @@ export const RequestController = {
   },
 
   // ===========================================
-  // 🔹 Cập nhật tiến độ đầu việc theo báo giá cha(quotation_item)
+  // 🔹 Cập nhật tiến độ đầu việc theo mảng items
   // ===========================================
   async updateItemProgress(req, res) {
     try {
       const technicianId = req.user.id;
-      const { items = [] } = req.body;
+      const { request_id, items = [] } = req.body;
+
+      console.log("request_id: ", request_id);
+      console.log("items: ", items);
+      
+
+      if (!request_id) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu request_id",
+        });
+      }
 
       if (!Array.isArray(items) || items.length === 0) {
         return baseResponse(res, {
@@ -467,74 +479,18 @@ export const RequestController = {
         });
       }
 
-      for (const item of items) {
-        const { id: item_id, status, note, images = [] } = item;
-
-        if (!item_id) continue;
-
-        const imageArray = Array.isArray(images) ? images : [];
-
-        // 1. Kiểm tra item có tồn tại
-        const [rows] = await db.query(
-          `SELECT status FROM quotation_items WHERE id = ?`,
-          [item_id]
-        );
-
-        if (rows.length === 0) {
-          console.warn("Item không tồn tại:", item_id);
-          continue;
-        }
-
-        const oldStatus = rows[0].status;
-
-        // 2. Cập nhật item
-        await db.query(
-          `UPDATE quotation_items 
-         SET status = ?, note = ?
-         WHERE id = ?`,
-          [status, note, item_id]
-        );
-
-        // ===============================
-        // 🔥 3. Cập nhật ảnh — replace
-        // ===============================
-
-        // Xóa toàn bộ ảnh cũ
-        await db.query(
-          `DELETE FROM quotation_items_images WHERE quotation_item_id = ?`,
-          [item_id]
-        );
-
-        // Chèn ảnh mới
-        if (imageArray.length > 0) {
-          const values = imageArray.map((url) => [
-            generateId("QIMG"),
-            item_id,
-            technicianId,
-            url,
-          ]);
-
-          await db.query(
-            `INSERT INTO quotation_items_images
-           (id, quotation_item_id, uploaded_by, image_url)
-           VALUES ?`,
-            [values]
-          );
-        }
-
-        // 4. Ghi log
-        await db.query(
-          `INSERT INTO quotation_items_logs
-         (id, quotation_item_id, old_status, new_status, note, changed_by)
-         VALUES (?, ?, ?, ?, ?, ?)`,
-          [generateId("QLOG"), item_id, oldStatus, status, note, technicianId]
-        );
-      }
+      // Gọi Model xử lý chính
+      const result = await RequestModel.updateItemProgress({
+        request_id,
+        technician_id: technicianId,
+        items,
+      });
 
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: "Cập nhật tiến độ đầu việc thành công",
+        message: "Cập nhật tiến độ thành công",
+        data: result,
       });
     } catch (error) {
       console.error("updateItemProgress:", error);
@@ -543,6 +499,43 @@ export const RequestController = {
         code: 500,
         status: false,
         message: "Lỗi server khi cập nhật tiến độ đầu việc",
+      });
+    }
+  },
+  // ===============================
+  // 🔹 Cập nhật status request => completed
+  // ===============================
+  async setCompleted(req, res) {
+    try {
+      const { request_id } = req.body;
+      const userId = req.user.id;
+
+      if (!request_id) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu request_id",
+        });
+      }
+
+      // Gọi model update status
+      const result = await RequestModel.setCompleted({
+        request_id,
+        user_id: userId,
+      });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Cập nhật yêu cầu thành completed thành công",
+        data: result,
+      });
+    } catch (error) {
+      console.error("setCompleted:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi cập nhật completed",
       });
     }
   },

@@ -364,6 +364,9 @@ export const RequestModel = {
   // ===============================
   // 🔹 Lấy chi tiết yêu cầu
   // ===============================
+  // ===============================
+  // 🔹 Lấy chi tiết yêu cầu
+  // ===============================
   async getRequestDetail(id) {
     // 1️⃣ Lấy thông tin chính của yêu cầu
     const [rows] = await db.query(
@@ -410,7 +413,7 @@ export const RequestModel = {
     if (rows.length === 0) return null;
     const request = rows[0];
 
-    // 2️⃣ Lấy ảnh liên quan
+    // 2️⃣ Lấy ảnh request
     const [images] = await db.query(
       `
     SELECT 
@@ -427,23 +430,20 @@ export const RequestModel = {
       [id]
     );
 
-    // 3️⃣ Lấy báo giá + item + ảnh theo từng item
+    // 3️⃣ Lấy báo giá
     const [quotationRows] = await db.query(
       `
       SELECT 
         q.id AS quotation_id,
         q.total_price,
-
         qi.id AS item_id,
         qi.name AS item_name,
         qi.price AS item_price,
         qi.status AS item_status,
         qi.note AS item_note,
-
         ii.id AS image_id,
         ii.image_url AS image_url,
         ii.created_at AS image_created_at
-
       FROM quotations q
       LEFT JOIN quotation_items qi 
             ON q.id = qi.quotation_id
@@ -454,8 +454,8 @@ export const RequestModel = {
     `,
       [id]
     );
-    let quotationData = null;
 
+    let quotationData = null;
     if (quotationRows.length > 0 && quotationRows[0].quotation_id) {
       const mapItems = {};
 
@@ -473,7 +473,6 @@ export const RequestModel = {
           };
         }
 
-        // Thêm ảnh nếu có
         if (row.image_url) {
           mapItems[row.item_id].images.push({
             id: row.image_id,
@@ -488,7 +487,63 @@ export const RequestModel = {
         data: Object.values(mapItems),
       };
     }
-    // 4️⃣ Gom dữ liệu trả về
+
+    // 4️⃣ Lấy thông tin thanh toán (CHỈ LẤY NẾU ĐÃ COMPLETED)
+    let payment = null;
+
+    if (request.status === "completed" || request.status === "paid") {
+      // Lấy payment info
+      const [paymentRows] = await db.query(
+        `
+      SELECT 
+        id AS payment_id,
+        amount,
+        payment_method,
+        payment_status,
+        created_at,
+        paid_at
+      FROM payments
+      WHERE request_id = ?
+      LIMIT 1
+      `,
+        [id]
+      );
+
+      if (paymentRows.length > 0) {
+        const pm = paymentRows[0];
+
+        // Lấy ảnh bằng chứng thanh toán
+        const [proofs] = await db.query(
+          `
+        SELECT 
+          id,
+          image_url,
+          uploaded_by,
+          created_at
+        FROM payment_proofs
+        WHERE payment_id = ?
+        ORDER BY created_at ASC
+        `,
+          [pm.payment_id]
+        );
+
+        payment = {
+          payment_id: pm.payment_id,
+          amount: Number(pm.amount),
+          method: pm.payment_method,
+          status: pm.payment_status,
+          paid_at: pm.paid_at,
+          proofs: proofs.map((p) => ({
+            id: p.id,
+            url: p.image_url,
+            uploaded_by: p.uploaded_by,
+            created_at: p.created_at,
+          })),
+        };
+      }
+    }
+
+    // 5️⃣ Trả về full object
     return {
       id: request.id,
       name_request: request.name_request,
@@ -531,9 +586,10 @@ export const RequestModel = {
       scene_images: images.filter((img) => img.type === "pending"),
 
       quotations: quotationData,
+
+      payment, // ⭐⭐ Thông tin thanh toán (null nếu chưa completed)
     };
   },
-
   // ===============================
   // 🔹 Admin gán yêu cầu cho thợ
   // ===============================
@@ -824,6 +880,201 @@ export const RequestModel = {
       request_id,
       old_status: oldStatus,
       new_status: newStatus,
+    };
+  },
+
+  // ===========================================
+  // 🔹 Model: Update item progress
+  // ===========================================
+  async updateItemProgress({ request_id, technician_id, items }) {
+    // 1️⃣ Lấy quotation_id từ request_id
+    const [[quotation]] = await db.query(
+      `SELECT id FROM quotations WHERE request_id = ?`,
+      [request_id]
+    );
+
+    if (!quotation) {
+      throw new Error("Không tìm thấy quotation của request");
+    }
+
+    const quotation_id = quotation.id;
+
+    // ===============================
+    // 🔥 2️⃣ Update từng item
+    // ===============================
+    for (const item of items) {
+      const { id: item_id, status, note, images = [] } = item;
+      if (!item_id) continue;
+
+      const imageArray = Array.isArray(images) ? images : [];
+
+      // 2.1 Check item tồn tại
+      const [[row]] = await db.query(
+        `SELECT status FROM quotation_items WHERE id = ?`,
+        [item_id]
+      );
+
+      if (!row) continue;
+      const oldStatus = row.status;
+
+      // 2.2 Update item (status + note)
+      await db.query(
+        `UPDATE quotation_items 
+       SET status = ?, note = ?
+       WHERE id = ?`,
+        [status, note, item_id]
+      );
+
+      // 2.3 Replace ảnh
+      await db.query(
+        `DELETE FROM quotation_items_images WHERE quotation_item_id = ?`,
+        [item_id]
+      );
+
+      if (imageArray.length > 0) {
+        const values = imageArray.map((url) => [
+          generateId("QIMG"),
+          item_id,
+          technician_id,
+          url,
+        ]);
+
+        await db.query(
+          `INSERT INTO quotation_items_images
+         (id, quotation_item_id, uploaded_by, image_url)
+         VALUES ?`,
+          [values]
+        );
+      }
+
+      // 2.4 Write log
+      await db.query(
+        `INSERT INTO quotation_items_logs
+       (id, quotation_item_id, old_status, new_status, note, changed_by)
+       VALUES (?, ?, ?, ?, ?, ?)`,
+        [generateId("QLOG"), item_id, oldStatus, status, note, technician_id]
+      );
+    }
+
+    // ===============================
+    // 🔥 3️⃣ Kiểm tra toàn bộ items
+    // ===============================
+    const [itemStatus] = await db.query(
+      `SELECT status FROM quotation_items WHERE quotation_id = ?`,
+      [quotation_id]
+    );
+
+    if (itemStatus.length === 0) {
+      throw new Error("Không tìm thấy items trong quotation");
+    }
+
+    const allCompleted = itemStatus.every((i) => i.status === "completed");
+
+    // ===============================
+    // 🔥 4️⃣ Update trạng thái request
+    // ===============================
+    if (allCompleted) {
+      // Completed → chờ khách duyệt
+      await db.query(
+        `UPDATE requests SET status = 'customer_review' WHERE id = ?`,
+        [request_id]
+      );
+
+      await db.query(
+        `INSERT INTO request_status_logs 
+       (id, request_id, old_status, new_status, changed_by)
+       VALUES (?, ?, ?, ?, ?)`,
+        [
+          generateId("RLOG"),
+          request_id,
+          "in_progress",
+          "customer_review",
+          technician_id,
+        ]
+      );
+
+      return { request_status: "customer_review" };
+    }
+
+    // Nếu chưa xong → vẫn đang in_progress
+    await db.query(`UPDATE requests SET status = 'in_progress' WHERE id = ?`, [
+      request_id,
+    ]);
+
+    return { request_status: "in_progress" };
+  },
+  // ===============================
+  // 🔹 Model: set request to completed + tạo payment
+  // ===============================
+  async setCompleted({ request_id, user_id }) {
+    // 1️⃣ Lấy trạng thái hiện tại
+    const [[reqRow]] = await db.query(
+      `SELECT status FROM requests WHERE id = ?`,
+      [request_id]
+    );
+
+    if (!reqRow) throw new Error("Không tìm thấy yêu cầu");
+
+    const oldStatus = reqRow.status;
+
+    if (!["customer_review"].includes(oldStatus)) {
+      throw new Error("Không thể hoàn tất yêu cầu ở trạng thái hiện tại");
+    }
+
+    // 2️⃣ Lấy tổng tiền từ quotation
+    const [[quotation]] = await db.query(
+      `SELECT total_price 
+     FROM quotations 
+     WHERE request_id = ?`,
+      [request_id]
+    );
+
+    if (!quotation) {
+      throw new Error("Không tìm thấy báo giá cho yêu cầu này");
+    }
+
+    const amount = quotation.total_price;
+
+    // 3️⃣ Tạo payment
+    const paymentId = generateId("PAY");
+
+    await db.query(
+      `INSERT INTO payments 
+     (id, request_id, payment_method, amount, payment_status, created_at)
+     VALUES (?, ?, 'qr', ?, 'pending', NOW())`,
+      [paymentId, request_id, amount]
+    );
+
+    // 4️⃣ Update request sang completed
+    await db.query(
+      `UPDATE requests 
+     SET status = 'completed', completed_at = NOW()
+     WHERE id = ?`,
+      [request_id]
+    );
+
+    // 5️⃣ Ghi log
+    await db.query(
+      `INSERT INTO request_status_logs 
+     (id, request_id, old_status, new_status, changed_by, reason)
+     VALUES (?, ?, ?, ?, ?, ?)`,
+      [
+        generateId("RLOG"),
+        request_id,
+        oldStatus,
+        "completed",
+        user_id,
+        "Khách xác nhận hoàn thành, chờ thanh toán",
+      ]
+    );
+
+    return {
+      request_id,
+      old_status: oldStatus,
+      new_status: "completed",
+      payment_id: paymentId,
+      payment_amount: amount,
+      payment_status: "pending",
     };
   },
 };

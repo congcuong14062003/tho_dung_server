@@ -11,11 +11,12 @@ const PORT = process.env.PORT || 5000;
 
 // ✅ Danh sách các client được phép truy cập (web + app)
 const allowedOrigins = [
-  "http://localhost:5173",       // web (Vite React)
-  "http://localhost:19006",      // Expo app (dev)
-  "exp://127.0.0.1:19000",       // React Native Expo
-  "http://192.168.1.5:5173",     // nếu test trên LAN
-  "http://192.168.1.5:8081"      // app React Native debug trên LAN
+  "http://localhost:5173", // web (Vite React)
+  "http://localhost:19006", // Expo app (dev)
+  "exp://127.0.0.1:19000", // React Native Expo
+  "http://192.168.1.5:5173", // nếu test trên LAN
+  "http://192.168.1.5:8081", // app React Native debug trên LAN
+  "http://192.168.100.96:8081", // thêm vào
 ];
 
 // ✅ Cấu hình CORS động
