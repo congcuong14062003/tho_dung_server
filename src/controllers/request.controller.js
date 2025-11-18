@@ -1,54 +1,29 @@
-import db from "../config/db.js";
 import { RequestModel } from "../models/request.model.js";
-import { generateId } from "../utils/crypto.js";
 import { baseResponse } from "../utils/response.helper.js";
+// Helper chung cho phân trang (dùng lại ở mọi list)
+const handlePagination = (req) => {
+  const page = parseInt(req.body.page) || 1;
+  const size = parseInt(req.body.size) || 10;
+  const keySearch = req.body.keySearch || "";
+  const status = req.body.status || "all";
+  const offset = (page - 1) * size;
 
+  return { page, size, keySearch, status, limit: size, offset };
+};
 export const RequestController = {
-  // ===============================
-  // 🔹 Khách tạo yêu cầu mới
-  // ===============================
+  // 1. Tạo yêu cầu – chỉ validate
   async create(req, res) {
     try {
-      const {
-        service_id,
-        name_request,
-        description,
-        address,
-        requested_date,
-        requested_time,
-      } = req.body;
+      const { service_id, name_request, description, address, requested_date, requested_time } = req.body;
+      const user_id = req.user.id;
 
-      const user_id = req.user.id; // ✅ lấy từ token
+      const images = req.files?.map(file => `${process.env.URL_SERVER}/uploads/${file.filename}`) || [];
 
-      console.log("req.user:", req.user);
-      console.log("req.files: ", req.files);
-
-      const images =
-        req.files?.map(
-          (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
-        ) || [];
-
-      if (!images || images.length < 1) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Vui lòng tải lên hình ảnh minh họa",
-        });
+      if (images.length === 0) {
+        return baseResponse(res, { code: 400, status: false, message: "Vui lòng tải lên ít nhất 1 hình ảnh" });
       }
-
-      // ⚠️ Kiểm tra bắt buộc
-      if (
-        !name_request ||
-        !description ||
-        !address ||
-        !requested_time ||
-        !requested_date
-      ) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Vui lòng cung cấp đầy đủ thông tin bắt buộc",
-        });
+      if (!service_id || !name_request || !description || !address || !requested_date || !requested_time) {
+        return baseResponse(res, { code: 400, status: false, message: "Thiếu thông tin bắt buộc" });
       }
 
       const requestId = await RequestModel.create({
@@ -62,355 +37,173 @@ export const RequestController = {
         images,
       });
 
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Tạo yêu cầu thành công",
-        data: { id: requestId },
-      });
+      return baseResponse(res, { code: 200, status: true, message: "Tạo yêu cầu thành công", data: { id: requestId } });
     } catch (error) {
       console.error("CreateRequest:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi tạo yêu cầu",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Lấy danh sách tất cả yêu cầu
-  // ===============================
+  // 2. Hủy yêu cầu – gọn hơn
+  async cancelRequest(req, res) {
+    try {
+      const result = await RequestModel.cancelRequest({
+        request_id: req.body.request_id,
+        user_id: req.user.id,
+        reason: req.body.reason,
+      });
+
+      if (!result.success) {
+        return baseResponse(res, { code: result.code || 400, status: false, message: result.message });
+      }
+
+      return baseResponse(res, { code: 200, status: true, message: "Hủy yêu cầu thành công" });
+    } catch (error) {
+      console.error("cancelRequest:", error);
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
+    }
+  },
+
+  // 3. Các hàm lấy danh sách – dùng helper
   async getAll(req, res) {
     try {
-      const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
-      const limit = parseInt(size);
-      const offset = (parseInt(page) - 1) * limit;
-
-      const { data, total } = await RequestModel.getAll({
-        keySearch,
-        status,
-        limit,
-        offset,
-      });
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Lấy danh sách yêu cầu thành công",
-        data: {
-          total,
-          page: parseInt(page),
-          size: parseInt(size),
-          data: data,
-        },
-      });
+      const { data, total } = await RequestModel.getAll(handlePagination(req));
+      return baseResponse(res, { code: 200, status: true, data: { total, ...handlePagination(req), data } });
     } catch (error) {
-      console.error("GetAllRequests:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi lấy danh sách yêu cầu",
-      });
+      console.error("getAll:", error);
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Lấy danh sách yêu cầu của khách hàng
-  // ===============================
   async getRequestsByUser(req, res) {
     try {
-      const userId = req.user.id; // ✅ lấy từ token
-      const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
-
-      const limit = parseInt(size);
-      const offset = (parseInt(page) - 1) * limit;
-
-      const { data, total } = await RequestModel.getRequestsByUser({
-        userId,
-        keySearch,
-        status,
-        limit,
-        offset,
-      });
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Lấy danh sách yêu cầu theo người dùng thành công",
-        data: {
-          total,
-          page: parseInt(page),
-          size: parseInt(size),
-          data,
-        },
-      });
+      const params = { ...handlePagination(req), userId: req.user.id };
+      const { data, total } = await RequestModel.getRequestsByUser(params);
+      return baseResponse(res, { code: 200, status: true, data: { total, ...handlePagination(req), data } });
     } catch (error) {
       console.error("getRequestsByUser:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi lấy danh sách yêu cầu theo người dùng",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Lấy danh sách yêu cầu được gán cho thợ
-  // ===============================
   async getRequestsByTechnician(req, res) {
     try {
-      const technicianId = req.user.id; // ✅ lấy từ token
-      const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
-
-      const limit = parseInt(size);
-      const offset = (parseInt(page) - 1) * limit;
-
-      const { data, total } = await RequestModel.getRequestsByTechnician({
-        technicianId,
-        keySearch,
-        status,
-        limit,
-        offset,
-      });
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Lấy danh sách yêu cầu được gán cho thợ thành công",
-        data: {
-          total,
-          page: parseInt(page),
-          size: parseInt(size),
-          data,
-        },
-      });
+      const params = { ...handlePagination(req), technicianId: req.user.id };
+      const { data, total } = await RequestModel.getRequestsByTechnician(params);
+      return baseResponse(res, { code: 200, status: true, data: { total, ...handlePagination(req), data } });
     } catch (error) {
       console.error("getRequestsByTechnician:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi lấy danh sách yêu cầu được gán cho thợ",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Lấy chi tiết 1 yêu cầu
-  // ===============================
+  // 4. Chi tiết yêu cầu – thêm check quyền (rất quan trọng!)
   async getRequestDetail(req, res) {
     try {
       const { id } = req.params;
       const request = await RequestModel.getRequestDetail(id);
-
       if (!request) {
-        return baseResponse(res, {
-          code: 404,
-          status: false,
-          message: "Không tìm thấy yêu cầu",
-        });
+        return baseResponse(res, { code: 404, status: false, message: "Không tìm thấy yêu cầu" });
       }
 
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Lấy chi tiết yêu cầu thành công",
-        data: request,
-      });
+      // Check quyền: chỉ chủ, thợ được gán, hoặc admin mới được xem
+      const allowed = req.user.role === "admin" ||
+        request.customer.id === req.user.id ||
+        request.technician?.id === req.user.id;
+
+      if (!allowed) {
+        return baseResponse(res, { code: 403, status: false, message: "Bạn không có quyền xem yêu cầu này" });
+      }
+
+      return baseResponse(res, { code: 200, status: true, data: request });
     } catch (error) {
       console.error("getRequestDetail:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi lấy chi tiết yêu cầu",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Admin gán yêu cầu cho thợ
-  // ===============================
+  // Các hàm còn lại – chỉ gọi Model (đã xử lý hết logic + transaction)
   async assignRequest(req, res) {
     try {
-      const { request_id, technician_id, reason } = req.body;
-      const admin_id = req.user.id;
-
-      if (!request_id || !technician_id) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Thiếu thông tin yêu cầu hoặc thợ",
-        });
-      }
-
       const result = await RequestModel.assignRequest({
-        request_id,
-        technician_id,
-        admin_id,
-        reason,
+        request_id: req.body.request_id,
+        technician_id: req.body.technician_id,
+        admin_id: req.user.id,
+        reason: req.body.reason,
       });
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Gán yêu cầu cho thợ thành công",
-        data: result,
-      });
+      return baseResponse(res, { code: 200, status: true, message: "Gán thợ thành công", data: result });
     } catch (error) {
       console.error("assignRequest:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi gán yêu cầu cho thợ",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Thợ chấp nhận hoặc từ chối yêu cầu
-  // ===============================
   async technicianResponse(req, res) {
     try {
-      const { request_id, action, reason } = req.body; // action: "accept" hoặc "reject"
-      const technician_id = req.user.id;
-
-      if (!["accept", "reject"].includes(action)) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Hành động không hợp lệ",
-        });
-      }
-
       const result = await RequestModel.technicianResponse({
-        request_id,
-        technician_id,
-        action,
-        reason,
+        request_id: req.body.request_id,
+        technician_id: req.user.id,
+        action: req.body.action,
+        reason: req.body.reason,
       });
-
       return baseResponse(res, {
         code: 200,
         status: true,
-        message:
-          action === "accept"
-            ? "Thợ đã chấp nhận yêu cầu"
-            : "Thợ đã từ chối yêu cầu",
+        message: req.body.action === "accept" ? "Chấp nhận yêu cầu thành công" : "Từ chối yêu cầu thành công",
         data: result,
       });
     } catch (error) {
       console.error("technicianResponse:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi thợ phản hồi yêu cầu",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Thợ tải lên hình ảnh khảo sát
-  // ===============================
+  // XÓA HOÀN TOÀN 2 HÀM NÀY – KHÔNG CẦN NỮA!
+  // async uploadSurveyImages → dùng insertRequestImages trong Model nếu cần
+  // async createQuotation → Model đã làm hết rồi
+
+  // Thay bằng hàm mới (nếu vẫn muốn riêng route up ảnh khảo sát)
   async uploadSurveyImages(req, res) {
     try {
-      const technicianId = req.user.id;
-      const { request_id } = req.body;
-      const images =
-        req.files?.map(
-          (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
-        ) || [];
+      const images = req.files?.map(f => `${process.env.URL_SERVER}/uploads/${f.filename}`) || [];
+      if (images.length === 0) return baseResponse(res, { code: 400, status: false, message: "Chưa tải ảnh" });
 
-      if (images.length === 0)
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Chưa có ảnh khảo sát",
-        });
-
-      const values = images.map((url) => [
-        generateId("IMG"),
-        request_id,
-        technicianId,
-        url,
-        "survey",
-      ]);
-      await db.query(
-        `INSERT INTO request_images (id, request_id, uploaded_by, image_url, type) VALUES ?`,
-        [values]
+      await RequestModel.insertRequestImages( // gọi hàm chung trong Model
+        req.body.request_id,
+        req.user.id,
+        images,
+        "survey"
       );
 
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Đã tải ảnh khảo sát thành công",
-      });
+      return baseResponse(res, { code: 200, status: true, message: "Tải ảnh khảo sát thành công" });
     } catch (error) {
       console.error("uploadSurveyImages:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi upload ảnh khảo sát",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
 
-  // ===============================
-  // 🔹 Thợ gửi báo giá
-  // ===============================
   async createQuotation(req, res) {
     try {
-      const technicianId = req.user.id;
       const { request_id, items } = req.body;
+      if (!Array.isArray(items) || items.length === 0) {
+        return baseResponse(res, { code: 400, status: false, message: "Danh sách báo giá trống" });
+      }
 
-      console.log("req.body: ", req.body);
-
-      if (!items || !Array.isArray(items) || items.length === 0)
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Chưa có mục báo giá",
-        });
-
-      // Tạo báo giá
       const quotationId = await RequestModel.createQuotation({
         request_id,
-        technician_id: technicianId,
+        technician_id: req.user.id,
         items,
       });
 
-      // Cập nhật trạng thái yêu cầu
-      await RequestModel.updateStatus(request_id, "quoted");
-
-      // Ghi log thay đổi trạng thái
-      await RequestModel.insertStatusLog({
-        id: generateId("LOG"),
-        requestId: request_id,
-        oldStatus: "assigned",
-        newStatus: "quoted",
-        changedBy: technicianId,
-        reason: "Thợ gửi báo giá",
-      });
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Đã gửi báo giá thành công",
-        data: { quotation_id: quotationId },
-      });
+      return baseResponse(res, { code: 200, status: true, message: "Gửi báo giá thành công", data: { quotation_id: quotationId } });
     } catch (error) {
       console.error("createQuotation:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi gửi báo giá",
-      });
+      return baseResponse(res, { code: 500, status: false, message: "Lỗi server" });
     }
   },
-
   // ===============================
   // 🔹 Khách hàng chấp nhận hoặc từ chối báo giá
   // ===============================
-
   async quotationResponse(req, res) {
     try {
       const userId = req.user.id;
@@ -461,7 +254,6 @@ export const RequestController = {
 
       console.log("request_id: ", request_id);
       console.log("items: ", items);
-      
 
       if (!request_id) {
         return baseResponse(res, {

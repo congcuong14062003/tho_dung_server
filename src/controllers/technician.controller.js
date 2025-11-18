@@ -143,4 +143,70 @@ export const TechnicianController = {
       });
     }
   },
+
+  // User nộp đơn
+  async requestBecomeTechnician(req, res) {
+    try {
+      const userId = req.user.id;
+      const data = req.body;
+
+      await TechnicianModel.requestBecomeTechnician({
+        user_id: userId,
+        ...data,
+      });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Đã gửi đơn xin làm thợ thành công! Vui lòng chờ admin duyệt.",
+      });
+    } catch (error) {
+      return baseResponse(res, { code: 500, message: error.message });
+    }
+  },
+
+  // Admin duyệt
+  async approveTechnician(req, res) {
+    try {
+      const { user_id } = req.body;
+      await TechnicianModel.approveTechnician(user_id, req.user.id);
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Duyệt thợ thành công",
+      });
+    } catch (error) {
+      return baseResponse(res, { code: 500, message: error.message });
+    }
+  },
+
+  // Admin từ chối
+  async rejectTechnician(req, res) {
+    try {
+      const { user_id, reason } = req.body;
+      await TechnicianModel.rejectTechnician(user_id, req.user.id, reason);
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Từ chối đơn thành công",
+      });
+    } catch (error) {
+      return baseResponse(res, { code: 500, message: error.message });
+    }
+  },
+
+  // Admin xem danh sách chờ duyệt
+  async getPendingTechnicians(req, res) {
+    try {
+      const { page = 1, size = 10, keySearch = "" } = req.query;
+      const result = await TechnicianModel.getPendingTechnicians({
+        page,
+        size,
+        keySearch,
+      });
+      return baseResponse(res, { code: 200, status: true, data: result });
+    } catch (error) {
+      return baseResponse(res, { code: 500, message: error.message });
+    }
+  },
 };

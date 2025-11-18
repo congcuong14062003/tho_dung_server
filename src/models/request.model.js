@@ -1,11 +1,120 @@
-import { ppid } from "process";
+// src/models/request.model.js
 import db from "../config/db.js";
 import { generateId } from "../utils/crypto.js";
 
+// ==============================
+// 🔹 HÀM DÙNG CHUNG (PRIVATE)
+// ==============================
+
+/**
+ * Wrapper transaction – dùng cho mọi thao tác cần atomic
+ */
+const withTransaction = async (callback) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
+
+/**
+ * Ghi log thay đổi trạng thái request
+ */
+const insertStatusLog = async ({
+  request_id,
+  old_status = null,
+  new_status,
+  changed_by,
+  reason = null,
+  connection = db,
+}) => {
+  const logId = generateId("RLOG");
+  await connection.query(
+    `INSERT INTO request_status_logs 
+     (id, request_id, old_status, new_status, changed_by, reason, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, NOW())`,
+    [logId, request_id, old_status, new_status, changed_by, reason]
+  );
+};
+
+/**
+ * Cập nhật trạng thái request + các field phụ (cancel_reason, technician_id, completed_at...)
+ */
+const updateRequestStatus = async (
+  request_id,
+  new_status,
+  extra = {},
+  connection = db
+) => {
+  const fields = ["status = ?", "updated_at = NOW()"];
+  const values = [new_status];
+
+  if (extra.technician_id !== undefined) {
+    fields.push("technician_id = ?");
+    values.push(extra.technician_id);
+  }
+  if (extra.cancel_reason !== undefined) {
+    fields.push("cancel_reason = ?");
+    values.push(extra.cancel_reason);
+  }
+  if (extra.cancel_by !== undefined) {
+    fields.push("cancel_by = ?");
+    values.push(extra.cancel_by);
+  }
+  if (extra.completed_at) {
+    fields.push("completed_at = NOW()");
+  }
+
+  values.push(request_id);
+
+  await connection.query(
+    `UPDATE requests SET ${fields.join(", ")} WHERE id = ?`,
+    values
+  );
+};
+
+/**
+ * Thêm nhiều ảnh vào request_images (dùng chung cho khách & thợ)
+ */
+const insertRequestImages = async (
+  request_id,
+  uploaded_by,
+  images,
+  type = 'pending',
+  connection = db
+) => {
+  if (!images || images.length === 0) return;
+
+  const values = images.map((url) => [
+    generateId("IMG"),
+    request_id,
+    uploaded_by,
+    url,
+    type,
+    new Date(), // created_at
+  ]);
+
+  await connection.query(
+    `INSERT INTO request_images 
+   (id, request_id, uploaded_by, image_url, type, created_at) 
+   VALUES ?`,
+    [values]
+  );
+};
+
+// ==============================
+// 🔹 REQUEST MODEL
+// ==============================
+
 export const RequestModel = {
-  // ===============================
-  // 🔹 Tạo yêu cầu mới
-  // ===============================
+  // 1. Tạo yêu cầu mới
   async create({
     user_id,
     service_id,
@@ -16,18 +125,13 @@ export const RequestModel = {
     requested_time,
     images = [],
   }) {
-    const connection = await db.getConnection();
-    try {
-      await connection.beginTransaction();
+    return await withTransaction(async (conn) => {
+      const requestId = generateId("REQ");
 
-      const requestId = generateId("REQ_"); // ví dụ: REQ-ABCD1234
-
-      // 1️⃣ Insert vào bảng requests
-      await connection.query(
-        `
-        INSERT INTO requests (id, user_id, service_id, name_request, description, address, requested_date, requested_time)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        `,
+      await conn.query(
+        `INSERT INTO requests 
+         (id, user_id, service_id, name_request, description, address, requested_date, requested_time)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           requestId,
           user_id,
@@ -39,57 +143,60 @@ export const RequestModel = {
           requested_time || null,
         ]
       );
-
-      // 2️⃣ Nếu có ảnh thì thêm vào request_images
-      if (images && images.length > 0) {
-        const imageValues = images.map((url) => [
-          generateId("IMG"),
-          requestId,
-          user_id,
-          url,
-        ]);
-        await connection.query(
-          `INSERT INTO request_images (id, request_id, uploaded_by, image_url) VALUES ?`,
-          [imageValues]
-        );
+      console.log("images: ", images);
+      if (images.length > 0) {
+        await insertRequestImages(requestId, user_id, images, "pending", conn);
       }
 
-      // 3️⃣ Ghi log trạng thái ban đầu
-      await connection.query(
-        `
-        INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          generateId("LOG"),
-          requestId,
-          null,
-          "pending",
-          user_id,
-          "Khách hàng tạo yêu cầu mới",
-        ]
-      );
-
-      await connection.commit();
-      connection.release();
+      await insertStatusLog({
+        request_id: requestId,
+        old_status: null,
+        new_status: "pending",
+        changed_by: user_id,
+        reason: "Khách hàng tạo yêu cầu mới",
+        connection: conn,
+      });
 
       return requestId;
-    } catch (error) {
-      await connection.rollback();
-      connection.release();
-      throw error;
-    }
+    });
   },
 
-  // Thêm danh sách ảnh cho yêu cầu
-  async addImages(requestId, userId, images) {
-    if (!images || images.length === 0) return;
-
-    const values = images.map((url) => [requestId, userId, url]);
-    await db.query(
-      `INSERT INTO request_images (request_id, uploaded_by, image_url) VALUES ?`,
-      [values]
+  // 2. Hủy yêu cầu (khách hàng)
+  async cancelRequest({ request_id, user_id, reason }) {
+    const [[request]] = await db.query(
+      `SELECT status FROM requests WHERE id = ? AND user_id = ?`,
+      [request_id, user_id]
     );
+
+    if (!request) {
+      return {
+        success: false,
+        code: 404,
+        message: "Yêu cầu không tồn tại hoặc không phải của bạn",
+      };
+    }
+    if (!["pending", "quoted"].includes(request.status)) {
+      return {
+        success: false,
+        code: 400,
+        message: "Chỉ được hủy khi đang pending hoặc quoted",
+      };
+    }
+
+    await updateRequestStatus(request_id, "cancelled", {
+      cancel_reason: reason,
+      cancel_by: user_id,
+    });
+
+    await insertStatusLog({
+      request_id,
+      old_status: request.status,
+      new_status: "cancelled",
+      changed_by: user_id,
+      reason,
+    });
+
+    return { success: true };
   },
 
   // ===============================
@@ -364,9 +471,6 @@ export const RequestModel = {
   // ===============================
   // 🔹 Lấy chi tiết yêu cầu
   // ===============================
-  // ===============================
-  // 🔹 Lấy chi tiết yêu cầu
-  // ===============================
   async getRequestDetail(id) {
     // 1️⃣ Lấy thông tin chính của yêu cầu
     const [rows] = await db.query(
@@ -590,491 +694,272 @@ export const RequestModel = {
       payment, // ⭐⭐ Thông tin thanh toán (null nếu chưa completed)
     };
   },
-  // ===============================
-  // 🔹 Admin gán yêu cầu cho thợ
-  // ===============================
-  async assignRequest({ request_id, technician_id, admin_id, reason }) {
-    const connection = await db.getConnection();
-    try {
-      await connection.beginTransaction();
 
-      // Lấy thợ cũ (nếu có)
-      const [[old]] = await connection.query(
+  // 5. Admin gán thợ
+  async assignRequest({ request_id, technician_id, admin_id, reason }) {
+    return await withTransaction(async (conn) => {
+      const [[old]] = await conn.query(
         "SELECT technician_id, status FROM requests WHERE id = ?",
         [request_id]
       );
-      const oldTech = old?.technician_id || null;
 
-      // Cập nhật yêu cầu
-      await connection.query(
-        `
-        UPDATE requests 
-        SET technician_id = ?, status = 'assigning', updated_at = NOW()
-        WHERE id = ?
-        `,
-        [technician_id, request_id]
+      await updateRequestStatus(
+        request_id,
+        "assigning",
+        { technician_id },
+        conn
       );
 
-      // Ghi log gán
-      await connection.query(
-        `
-        INSERT INTO request_assignments (id, request_id, old_technician_id, new_technician_id, assigned_by, reason)
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
+      await conn.query(
+        `INSERT INTO request_assignments 
+         (id, request_id, old_technician_id, new_technician_id, assigned_by, reason)
+         VALUES (?, ?, ?, ?, ?, ?)`,
         [
           generateId("ASSIGN"),
           request_id,
-          oldTech,
+          old?.technician_id || null,
           technician_id,
           admin_id,
-          reason || "Gán yêu cầu mới cho thợ",
+          reason || "Admin gán thợ",
         ]
       );
 
-      // Ghi log trạng thái
-      await connection.query(
-        `
-        INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
-        VALUES (?, ?, ?, ?, ?, ?)
-        `,
-        [
-          generateId("LOG"),
-          request_id,
-          old?.status || "pending",
-          "assigning",
-          admin_id,
-          "Admin gán yêu cầu cho thợ",
-        ]
-      );
+      await insertStatusLog({
+        request_id,
+        old_status: old?.status || "pending",
+        new_status: "assigning",
+        changed_by: admin_id,
+        reason: "Admin gán thợ",
+        connection: conn,
+      });
 
-      await connection.commit();
-      connection.release();
       return { request_id, technician_id };
-    } catch (error) {
-      await connection.rollback();
-      connection.release();
-      throw error;
-    }
+    });
   },
 
-  // ===============================
-  // 🔹 Thợ phản hồi (chấp nhận / từ chối)
-  // ===============================
+  // 6. Thợ chấp nhận / từ chối
   async technicianResponse({ request_id, technician_id, action, reason }) {
-    const connection = await db.getConnection();
-    try {
-      await connection.beginTransaction();
-
-      // Lấy thông tin hiện tại của request
-      const [[request]] = await connection.query(
+    return await withTransaction(async (conn) => {
+      const [[request]] = await conn.query(
         "SELECT status FROM requests WHERE id = ? AND technician_id = ?",
         [request_id, technician_id]
       );
-
       if (!request)
         throw new Error(
           "Yêu cầu không tồn tại hoặc không được gán cho thợ này"
         );
 
-      let newStatus = "";
-      let logReason = "";
-      let newTechnicianId = technician_id;
+      const isAccept = action === "accept";
+      const newStatus = isAccept ? "assigned" : "pending";
+      const newTechId = isAccept ? technician_id : null;
 
-      if (action === "accept") {
-        newStatus = "assigned";
-        logReason = "Thợ chấp nhận yêu cầu";
-      } else if (action === "reject") {
-        newStatus = "pending"; // quay lại trạng thái chờ admin xử lý
-        logReason = reason || "Thợ từ chối yêu cầu";
-        newTechnicianId = null; // ❗ bỏ gán thợ
-      } else {
-        throw new Error(
-          "Hành động không hợp lệ. Chỉ chấp nhận 'accept' hoặc 'reject'"
-        );
-      }
-
-      // Cập nhật trạng thái + xử lý gán lại thợ (nếu từ chối)
-      await connection.query(
-        `
-      UPDATE requests 
-      SET status = ?, technician_id = ?, updated_at = NOW()
-      WHERE id = ?
-      `,
-        [newStatus, newTechnicianId, request_id]
+      await updateRequestStatus(
+        request_id,
+        newStatus,
+        { technician_id: newTechId },
+        conn
       );
 
-      // Ghi log trạng thái
-      await connection.query(
-        `
-      INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
-      VALUES (?, ?, ?, ?, ?, ?)
-      `,
-        [
-          generateId("LOG"),
-          request_id,
-          request.status,
-          newStatus,
-          technician_id,
-          logReason,
-        ]
-      );
-
-      await connection.commit();
-      connection.release();
+      await insertStatusLog({
+        request_id,
+        old_status: request.status,
+        new_status: newStatus,
+        changed_by: technician_id,
+        reason: isAccept
+          ? "Thợ chấp nhận yêu cầu"
+          : reason || "Thợ từ chối yêu cầu",
+        connection: conn,
+      });
 
       return { request_id, status: newStatus };
-    } catch (error) {
-      await connection.rollback();
-      connection.release();
-      throw error;
-    }
+    });
   },
 
-  // ===============================
-  // 🔹 Cập nhật trạng thái yêu cầu
-  // ===============================
-  async updateStatus(requestId, status) {
-    await db.query(`UPDATE requests SET status = ? WHERE id = ?`, [
-      status,
-      requestId,
-    ]);
-  },
-
-  // ===============================
-  // 🔹 Ghi log trạng thái
-  // ===============================
-  async insertStatusLog({
-    id,
-    requestId,
-    oldStatus,
-    newStatus,
-    changedBy,
-    reason,
-  }) {
-    await db.query(
-      `INSERT INTO request_status_logs (id, request_id, old_status, new_status, changed_by, reason)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-      [id, requestId, oldStatus, newStatus, changedBy, reason]
-    );
-  },
-
-  // ===============================
-  // 🔹 Thợ tải ảnh khảo sát lên
-  // ===============================
-  async insertSurveyImages(requestId, technicianId, images) {
-    const values = images.map((url) => [
-      requestId,
-      technicianId,
-      url,
-      "survey",
-    ]);
-    await db.query(
-      `INSERT INTO request_images (request_id, uploaded_by, image_url, type)
-       VALUES ?`,
-      [values]
-    );
-  },
-
-  // ===============================
-  // 🔹 Thêm mục báo giá
-  // ===============================
-  async insertQuotationItems(requestId, technicianId, items) {
-    for (const item of items) {
-      await db.query(
-        `INSERT INTO quotations (id, request_id, technician_id, name, price)
-         VALUES (UUID(), ?, ?, ?, ?)`,
-        [requestId, technicianId, item.name, item.price]
-      );
-    }
-  },
-
-  // ===============================
-  // 🔹 Thợ gửi báo giá (Model)
-  // ===============================
+  // 7. Thợ gửi báo giá
   async createQuotation({ request_id, technician_id, items }) {
-    const connection = await db.getConnection();
-    try {
-      await connection.beginTransaction();
-
+    return await withTransaction(async (conn) => {
       const quotationId = generateId("QUOTE");
-
-      // 1️⃣ Thêm vào bảng quotations
       const total_price = items.reduce(
-        (sum, item) => sum + Number(item.price || 0),
+        (sum, i) => sum + Number(i.price || 0),
         0
       );
-      await connection.query(
+
+      await conn.query(
         `INSERT INTO quotations (id, request_id, technician_id, total_price)
-       VALUES (?, ?, ?, ?)`,
+         VALUES (?, ?, ?, ?)`,
         [quotationId, request_id, technician_id, total_price]
       );
 
-      // 2️⃣ Thêm từng item chi tiết
       const itemValues = items.map((item) => [
         generateId("QITEM"),
         quotationId,
         item.name,
-        item.price,
+        Number(item.price || 0),
         technician_id,
       ]);
-      await connection.query(
+      await conn.query(
         `INSERT INTO quotation_items (id, quotation_id, name, price, report_by) VALUES ?`,
         [itemValues]
       );
 
-      await connection.commit();
-      connection.release();
+      await updateRequestStatus(request_id, "quoted", {}, conn);
+      await insertStatusLog({
+        request_id,
+        old_status: "assigned",
+        new_status: "quoted",
+        changed_by: technician_id,
+        reason: "Thợ gửi báo giá",
+        connection: conn,
+      });
 
       return quotationId;
-    } catch (error) {
-      await connection.rollback();
-      connection.release();
-      throw error;
-    }
+    });
   },
 
-  // ===============================
-  // 🔹 Khách chấp nhận hoặc từ chối báo giá
-  // ===============================
+  // 8. Khách phản hồi báo giá
   async quotationResponse({ request_id, user_id, action, reason }) {
-    // 1️⃣ Lấy thông tin yêu cầu
-    const [rows] = await db.query(`SELECT status FROM requests WHERE id = ?`, [
-      request_id,
-    ]);
+    const [[request]] = await db.query(
+      `SELECT status FROM requests WHERE id = ? AND user_id = ?`,
+      [request_id, user_id]
+    );
+    if (!request)
+      throw new Error("Yêu cầu không tồn tại hoặc không phải của bạn");
 
-    if (rows.length === 0) throw new Error("Không tồn tại yêu cầu");
-
-    const oldStatus = rows[0].status;
-
-    // 2️⃣ Xác định trạng thái mới
     const newStatus = action === "accept" ? "in_progress" : "cancelled";
-    const cancelReason = reason === "accept" ? null : reason;
-    const userCancel = user_id === "accept" ? null : user_id;
 
-    // 3️⃣ Cập nhật yêu cầu
-    await db.query(
-      `UPDATE requests SET status = ?, cancel_reason = ?, cancel_by = ?  WHERE id = ?`,
-      [newStatus, cancelReason, userCancel, request_id]
-    );
+    await updateRequestStatus(request_id, newStatus, {
+      cancel_reason: action === "reject" ? reason : null,
+      cancel_by: action === "reject" ? user_id : null,
+    });
 
-    // 4️⃣ Lưu log thay đổi trạng thái
-    await db.query(
-      `
-      INSERT INTO request_status_logs 
-      (id, request_id, old_status, new_status, changed_by, reason)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `,
-      [
-        generateId("LOG"),
-        request_id,
-        oldStatus,
-        newStatus,
-        user_id,
-        action === "accept"
-          ? "Khách hàng chấp nhận báo giá"
-          : reason || "Khách hàng từ chối báo giá",
-      ]
-    );
-
-    return {
+    await insertStatusLog({
       request_id,
-      old_status: oldStatus,
+      old_status: request.status,
       new_status: newStatus,
-    };
+      changed_by: user_id,
+      reason:
+        action === "accept"
+          ? "Khách chấp nhận báo giá"
+          : reason || "Khách từ chối báo giá",
+    });
+
+    return { request_id, new_status: newStatus };
   },
 
-  // ===========================================
-  // 🔹 Model: Update item progress
-  // ===========================================
+  // 9. Cập nhật tiến độ từng mục công việc
   async updateItemProgress({ request_id, technician_id, items }) {
-    // 1️⃣ Lấy quotation_id từ request_id
-    const [[quotation]] = await db.query(
-      `SELECT id FROM quotations WHERE request_id = ?`,
-      [request_id]
-    );
-
-    if (!quotation) {
-      throw new Error("Không tìm thấy quotation của request");
-    }
-
-    const quotation_id = quotation.id;
-
-    // ===============================
-    // 🔥 2️⃣ Update từng item
-    // ===============================
-    for (const item of items) {
-      const { id: item_id, status, note, images = [] } = item;
-      if (!item_id) continue;
-
-      const imageArray = Array.isArray(images) ? images : [];
-
-      // 2.1 Check item tồn tại
-      const [[row]] = await db.query(
-        `SELECT status FROM quotation_items WHERE id = ?`,
-        [item_id]
+    return await withTransaction(async (conn) => {
+      const [[{ id: quotation_id }]] = await conn.query(
+        `SELECT id FROM quotations WHERE request_id = ?`,
+        [request_id]
       );
+      if (!quotation_id) throw new Error("Không tìm thấy báo giá");
 
-      if (!row) continue;
-      const oldStatus = row.status;
+      for (const item of items) {
+        const { id: item_id, status, note, images = [] } = item;
+        if (!item_id) continue;
 
-      // 2.2 Update item (status + note)
-      await db.query(
-        `UPDATE quotation_items 
-       SET status = ?, note = ?
-       WHERE id = ?`,
-        [status, note, item_id]
-      );
+        const [[old]] = await conn.query(
+          `SELECT status FROM quotation_items WHERE id = ?`,
+          [item_id]
+        );
+        if (!old) continue;
 
-      // 2.3 Replace ảnh
-      await db.query(
-        `DELETE FROM quotation_items_images WHERE quotation_item_id = ?`,
-        [item_id]
-      );
+        await conn.query(
+          `UPDATE quotation_items SET status = ?, note = ? WHERE id = ?`,
+          [status, note || null, item_id]
+        );
 
-      if (imageArray.length > 0) {
-        const values = imageArray.map((url) => [
-          generateId("QIMG"),
-          item_id,
-          technician_id,
-          url,
-        ]);
+        await conn.query(
+          `DELETE FROM quotation_items_images WHERE quotation_item_id = ?`,
+          [item_id]
+        );
+        if (images.length > 0) {
+          const values = images.map((url) => [
+            generateId("QIMG"),
+            item_id,
+            technician_id,
+            url,
+          ]);
+          await conn.query(
+            `INSERT INTO quotation_items_images (id, quotation_item_id, uploaded_by, image_url) VALUES ?`,
+            [values]
+          );
+        }
 
-        await db.query(
-          `INSERT INTO quotation_items_images
-         (id, quotation_item_id, uploaded_by, image_url)
-         VALUES ?`,
-          [values]
+        await conn.query(
+          `INSERT INTO quotation_items_logs 
+           (id, quotation_item_id, old_status, new_status, note, changed_by)
+           VALUES (?, ?, ?, ?, ?, ?)`,
+          [generateId("QLOG"), item_id, old.status, status, note, technician_id]
         );
       }
 
-      // 2.4 Write log
-      await db.query(
-        `INSERT INTO quotation_items_logs
-       (id, quotation_item_id, old_status, new_status, note, changed_by)
-       VALUES (?, ?, ?, ?, ?, ?)`,
-        [generateId("QLOG"), item_id, oldStatus, status, note, technician_id]
-      );
-    }
-
-    // ===============================
-    // 🔥 3️⃣ Kiểm tra toàn bộ items
-    // ===============================
-    const [itemStatus] = await db.query(
-      `SELECT status FROM quotation_items WHERE quotation_id = ?`,
-      [quotation_id]
-    );
-
-    if (itemStatus.length === 0) {
-      throw new Error("Không tìm thấy items trong quotation");
-    }
-
-    const allCompleted = itemStatus.every((i) => i.status === "completed");
-
-    // ===============================
-    // 🔥 4️⃣ Update trạng thái request
-    // ===============================
-    if (allCompleted) {
-      // Completed → chờ khách duyệt
-      await db.query(
-        `UPDATE requests SET status = 'customer_review' WHERE id = ?`,
-        [request_id]
+      const [rows] = await conn.query(
+        `SELECT status FROM quotation_items WHERE quotation_id = ?`,
+        [quotation_id]
       );
 
-      await db.query(
-        `INSERT INTO request_status_logs 
-       (id, request_id, old_status, new_status, changed_by)
-       VALUES (?, ?, ?, ?, ?)`,
-        [
-          generateId("RLOG"),
+      const allCompleted =
+        rows.length > 0 && rows.every((r) => r.status === "completed");
+      const nextStatus = allCompleted ? "customer_review" : "in_progress";
+
+      await updateRequestStatus(request_id, nextStatus, {}, conn);
+
+      if (allCompleted) {
+        await insertStatusLog({
           request_id,
-          "in_progress",
-          "customer_review",
-          technician_id,
-        ]
-      );
+          old_status: "in_progress",
+          new_status: "customer_review",
+          changed_by: technician_id,
+          reason: "Hoàn thành toàn bộ công việc",
+          connection: conn,
+        });
+      }
 
-      return { request_status: "customer_review" };
-    }
-
-    // Nếu chưa xong → vẫn đang in_progress
-    await db.query(`UPDATE requests SET status = 'in_progress' WHERE id = ?`, [
-      request_id,
-    ]);
-
-    return { request_status: "in_progress" };
+      return { request_status: nextStatus };
+    });
   },
-  // ===============================
-  // 🔹 Model: set request to completed + tạo payment
-  // ===============================
+
+  // 10. Khách xác nhận hoàn thành → tạo payment
   async setCompleted({ request_id, user_id }) {
-    // 1️⃣ Lấy trạng thái hiện tại
-    const [[reqRow]] = await db.query(
-      `SELECT status FROM requests WHERE id = ?`,
-      [request_id]
+    const [[request]] = await db.query(
+      `SELECT status FROM requests WHERE id = ? AND user_id = ?`,
+      [request_id, user_id]
     );
-
-    if (!reqRow) throw new Error("Không tìm thấy yêu cầu");
-
-    const oldStatus = reqRow.status;
-
-    if (!["customer_review"].includes(oldStatus)) {
-      throw new Error("Không thể hoàn tất yêu cầu ở trạng thái hiện tại");
+    if (!request || request.status !== "customer_review") {
+      throw new Error("Không thể hoàn tất ở trạng thái hiện tại");
     }
 
-    // 2️⃣ Lấy tổng tiền từ quotation
     const [[quotation]] = await db.query(
-      `SELECT total_price 
-     FROM quotations 
-     WHERE request_id = ?`,
+      `SELECT total_price FROM quotations WHERE request_id = ?`,
       [request_id]
     );
+    if (!quotation) throw new Error("Không tìm thấy báo giá");
 
-    if (!quotation) {
-      throw new Error("Không tìm thấy báo giá cho yêu cầu này");
-    }
-
-    const amount = quotation.total_price;
-
-    // 3️⃣ Tạo payment
     const paymentId = generateId("PAY");
 
     await db.query(
-      `INSERT INTO payments 
-     (id, request_id, payment_method, amount, payment_status, created_at)
-     VALUES (?, ?, 'qr', ?, 'pending', NOW())`,
-      [paymentId, request_id, amount]
+      `INSERT INTO payments (id, request_id, payment_method, amount, payment_status)
+       VALUES (?, ?, 'qr', ?, 'pending')`,
+      [paymentId, request_id, quotation.total_price]
     );
 
-    // 4️⃣ Update request sang completed
-    await db.query(
-      `UPDATE requests 
-     SET status = 'completed', completed_at = NOW()
-     WHERE id = ?`,
-      [request_id]
-    );
+    await updateRequestStatus(request_id, "payment", { completed_at: true });
 
-    // 5️⃣ Ghi log
-    await db.query(
-      `INSERT INTO request_status_logs 
-     (id, request_id, old_status, new_status, changed_by, reason)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        generateId("RLOG"),
-        request_id,
-        oldStatus,
-        "completed",
-        user_id,
-        "Khách xác nhận hoàn thành, chờ thanh toán",
-      ]
-    );
+    await insertStatusLog({
+      request_id,
+      old_status: request.status,
+      new_status: "payment",
+      changed_by: user_id,
+      reason: "Khách xác nhận hoàn thành, chờ thanh toán",
+    });
 
     return {
       request_id,
-      old_status: oldStatus,
-      new_status: "completed",
       payment_id: paymentId,
-      payment_amount: amount,
-      payment_status: "pending",
+      payment_amount: quotation.total_price,
+      new_status: "payment",
     };
   },
 };

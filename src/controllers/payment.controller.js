@@ -1,7 +1,42 @@
+import { PaymentModel } from "../models/payment.model.js";
+import { RequestModel } from "../models/request.model.js";
 import { baseResponse } from "../utils/response.helper.js";
 import dotenv from "dotenv";
 dotenv.config();
 export const PaymentController = {
+  async getPaymentDetail(req, res) {
+    try {
+      const { request_id } = req.params;
+
+      const request = await RequestModel.getRequestDetail(request_id); // lấy user_id để check quyền
+      if (!request.id)
+        return baseResponse(res, {
+          code: 404,
+          message: "Không tìm thấy yêu cầu",
+        });
+
+      // Chỉ chủ yêu cầu hoặc admin được xem
+      // if (request.customer.id !== req.user.id) {
+      //   return baseResponse(res, {
+      //     code: 403,
+      //     message: "Không có quyền xem thông tin thanh toán",
+      //   });
+      // }
+
+      const data = await PaymentModel.getPaymentDetail(request_id);
+      if (!data)
+        return baseResponse(res, {
+          code: 404,
+          message: "Chưa có thông tin thanh toán",
+        });
+
+      return baseResponse(res, { code: 200, status: true, data });
+    } catch (error) {
+      console.error("getPaymentDetail:", error.message);
+      return baseResponse(res, { code: 500, message: "Lỗi server" });
+    }
+  },
+
   // ===============================
   // 🔹 Upload bill thanh toán
   // ===============================

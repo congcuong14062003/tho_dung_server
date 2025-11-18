@@ -10,20 +10,31 @@ router.post(
   authorizeRoles("admin"),
   TechnicianController.getAllTechnicians
 );
-// User đăng ký lên làm thợ
+// User nộp đơn
 router.post(
-  "/apply",
+  "/technician/request",
   verifyToken,
   authorizeRoles("customer"),
-  TechnicianController.applyToBecomeTechnician
+  TechnicianController.requestBecomeTechnician
 );
 
-// Admin duyệt thợ
-router.put(
-  "/approve/:userId",
+// Admin
+router.get(
+  "/admin/technician/pending",
+  verifyToken,
+  authorizeRoles("admin"),
+  TechnicianController.getPendingTechnicians
+);
+router.post(
+  "/admin/technician/approve",
   verifyToken,
   authorizeRoles("admin"),
   TechnicianController.approveTechnician
 );
-
+router.post(
+  "/admin/technician/reject",
+  verifyToken,
+  authorizeRoles("admin"),
+  TechnicianController.rejectTechnician
+);
 export default router;

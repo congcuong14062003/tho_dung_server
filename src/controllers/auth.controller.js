@@ -7,7 +7,7 @@ import { TechnicianModel } from "../models/technician.model.js";
 
 export const AuthController = {
   validateRole(role) {
-    return ["customer", "technician"].includes(role);
+    return ["customer"].includes(role);
   },
 
   async register(req, res) {
@@ -210,7 +210,106 @@ export const AuthController = {
     }
   },
 
-  async login(req, res) {
+  // =========================================
+  // ĐĂNG NHẬP CLIENT (khách hàng + thợ)
+  // =========================================
+  async loginClient(req, res) {
+    try {
+      const { phone, password } = req.body;
+
+      if (!phone || !password) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu số điện thoại hoặc mật khẩu",
+        });
+      }
+
+      const user = await UserModel.findByPhone(phone);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Tài khoản không tồn tại",
+        });
+      }
+
+      // Không cho admin đăng nhập bằng API này
+      if (user.role === "admin") {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Tài khoản không tồn tại",
+        });
+      }
+
+      if (!user.verified) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Tài khoản chưa được xác minh OTP",
+        });
+      }
+
+      if (user.status !== "active") {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Tài khoản bị khóa hoặc đang chờ duyệt",
+        });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password_hash);
+      if (!isMatch) {
+        return baseResponse(res, {
+          code: 401,
+          status: false,
+          message: "Mật khẩu không đúng",
+        });
+      }
+
+      const token = generateToken({
+        id: user.id,
+        phone: user.phone,
+        role: user.role,
+      });
+
+      // Nếu là thợ → lấy thêm thông tin profile
+      let workerInfor = null;
+      if (user.role === "technician") {
+        workerInfor = await TechnicianModel.getProfileByUserId(user.id);
+      }
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Đăng nhập thành công",
+        data: {
+          token,
+          userInfor: {
+            id: user.id,
+            full_name: user.full_name,
+            phone: user.phone,
+            role: user.role,
+            avatar_link: user.avatar_link,
+          },
+          workerInfor,
+        },
+      });
+    } catch (error) {
+      console.error("LoginClient Error:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server",
+      });
+    }
+  },
+
+  // =========================================
+  // ĐĂNG NHẬP ADMIN (riêng biệt, bảo mật cao hơn)
+  // =========================================
+  async loginAdmin(req, res) {
     try {
       const { phone, password } = req.body;
 
@@ -231,51 +330,61 @@ export const AuthController = {
         });
       }
 
-      if (!user.verified) {
+      // Chỉ cho phép role = admin
+      if (user.role !== "admin") {
         return baseResponse(res, {
-          code: 402,
+          code: 403,
           status: false,
-          message: "Tài khoản chưa được xác minh",
+          message: "Bạn không có quyền admin",
         });
       }
 
-      const isMatch = await bcrypt.compare(
-        password,
-        user.password_hash || user.password
-      );
+      if (user.status !== "active") {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Tài khoản admin bị khóa",
+        });
+      }
+
+      const isMatch = await bcrypt.compare(password, user.password_hash);
       if (!isMatch) {
         return baseResponse(res, {
-          code: 400,
+          code: 401,
           status: false,
-          message: "Sai tên đăng nhập hoặc mật khẩu",
+          message: "Mật khẩu không đúng",
         });
       }
 
-      const token = generateToken(user);
+      const token = generateToken(
+        {
+          id: user.id,
+          phone: user.phone,
+          role: "admin",
+        },
+        "1h"
+      ); // Admin token hết hạn nhanh hơn (tùy chỉnh)
 
       return baseResponse(res, {
         code: 200,
-        message: "Đăng nhập thành công",
         status: true,
+        message: "Đăng nhập admin thành công",
         data: {
           token,
-          userInfor: {
+          adminInfor: {
             id: user.id,
-            full_name: user.full_name || user.fullname,
-            id_card: user.id_card || user.idcard,
+            full_name: user.full_name,
             phone: user.phone,
-            role: user.role,
-            avatar_link: user.avatar_link,
+            role: "admin",
           },
-          workerInfor: null,
         },
       });
     } catch (error) {
-      console.error(error);
+      console.error("LoginAdmin Error:", error);
       return baseResponse(res, {
         code: 500,
         status: false,
-        message: "Lỗi server khi đăng nhập",
+        message: "Lỗi server",
       });
     }
   },

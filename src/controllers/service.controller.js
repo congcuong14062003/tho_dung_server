@@ -107,43 +107,63 @@ export const ServiceController = {
   async update(req, res) {
     try {
       const id = req.params.id;
-      const { name, description, base_price, category_id } = req.body; // 👈 FE gửi "base_price"
+      const { name, description, base_price, category_id } = req.body;
 
-      // Kiểm tra service có tồn tại không
+      // 1. Kiểm tra dịch vụ có tồn tại không
       const service = await ServiceModel.getById(id);
-      if (!service)
+      if (!service) {
         return baseResponse(res, {
           code: 404,
           status: false,
           message: "Không tìm thấy dịch vụ để cập nhật",
         });
+      }
 
-      // Kiểm tra trùng tên trong danh mục
-      const existed = await ServiceModel.getByNameInCategory(name, category_id);
-      if (existed && existed.id !== parseInt(id))
+      // 2. Kiểm tra trùng tên trong cùng danh mục (LOẠI TRỪ chính nó)
+      if (name && category_id) {
+        const existed = await ServiceModel.getByNameInCategory(
+          name,
+          category_id
+        );
+        if (existed && existed.id !== id) {
+          // ← chỉ khác ở đây: so sánh với id (string)
+          return baseResponse(res, {
+            code: 409,
+            status: false,
+            message: "Tên dịch vụ đã tồn tại trong danh mục này",
+          });
+        }
+      }
+
+      // 3. Cập nhật (chỉ update những field được gửi lên)
+      const updateData = {};
+      if (name !== undefined) updateData.name = name;
+      if (description !== undefined) updateData.description = description;
+      if (base_price !== undefined) updateData.base_price = base_price;
+      if (category_id !== undefined) updateData.category_id = category_id;
+
+      // Nếu không có gì thay đổi
+      if (Object.keys(updateData).length === 0) {
         return baseResponse(res, {
-          code: 409,
-          status: false,
-          message: "Tên dịch vụ đã tồn tại trong danh mục này",
+          code: 200,
+          status: true,
+          message: "Không có thay đổi nào được áp dụng",
         });
+      }
 
-      // Cập nhật dữ liệu
-      const affected = await ServiceModel.update(id, {
-        name,
-        description,
-        base_price,
-        category_id,
-      });
+      const affected = await ServiceModel.update(id, updateData);
 
-      if (!affected)
+      if (affected === 0) {
         return baseResponse(res, {
           code: 400,
           status: false,
-          message: "Không có thay đổi nào được áp dụng",
+          message: "Cập nhật thất bại, vui lòng thử lại",
         });
+      }
 
       return baseResponse(res, {
         code: 200,
+        status: true,
         message: "Cập nhật dịch vụ thành công",
       });
     } catch (error) {

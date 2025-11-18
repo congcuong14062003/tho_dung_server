@@ -3,6 +3,7 @@ import { RequestController } from "../controllers/request.controller.js";
 import { convertHeicToJpg, upload } from "../middlewares/upload.js";
 import { authorizeRoles, verifyToken } from "../middlewares/auth.middleware.js";
 import { PaymentController } from "../controllers/payment.controller.js";
+import { canViewRequestDetail } from "../middlewares/request.middleware.js";
 
 const router = express.Router();
 
@@ -15,6 +16,15 @@ router.post(
   // convertHeicToJpg, // ✅ thêm bước chuyển HEIC sang JPG
   RequestController.create
 );
+
+// Khách hàng hủy yêu cầu
+router.post(
+  "/cancel",
+  verifyToken,
+  authorizeRoles("customer"),
+  RequestController.cancelRequest
+);
+
 // Lấy tất cả yêu cầu (dành cho admin)
 router.post(
   "/get-all-request",
@@ -41,6 +51,7 @@ router.post(
 router.get(
   "/:id/detail-request",
   verifyToken,
+  canViewRequestDetail,
   RequestController.getRequestDetail
 );
 
@@ -85,7 +96,7 @@ router.post(
   RequestController.quotationResponse
 );
 
-// Thợ cập nhật tiến độ công việc
+// Thợ và khách cập nhật tiến độ công việc
 router.post(
   "/quotation/update-progress",
   verifyToken,
@@ -101,21 +112,5 @@ router.post(
   RequestController.setCompleted
 );
 
-// Upload hóa đơn thanh toán (customer)
-router.post(
-  "/payment/upload-proof",
-  verifyToken,
-  authorizeRoles("customer"),
-  upload.array("images", 5),
-  PaymentController.uploadProof
-);
-
-// Admin duyệt hoặc từ chối hóa đơn
-router.post(
-  "/admin/payment/verify-payment",
-  verifyToken,
-  authorizeRoles("admin"),
-  PaymentController.verifyPayment
-);
 
 export default router;
