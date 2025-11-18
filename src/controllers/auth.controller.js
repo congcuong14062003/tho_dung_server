@@ -245,7 +245,7 @@ export const AuthController = {
 
       if (!user.verified) {
         return baseResponse(res, {
-          code: 403,
+          code: 402,
           status: false,
           message: "Tài khoản chưa được xác minh OTP",
         });
