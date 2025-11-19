@@ -16,7 +16,10 @@ export const PaymentController = {
         });
 
       // Chỉ chủ yêu cầu hoặc admin được xem
-      // if (request.customer.id !== req.user.id) {
+      // if (
+      //   request.customer.id !== req.user.id ||
+      //   request.technician.id !== req.user.id
+      // ) {
       //   return baseResponse(res, {
       //     code: 403,
       //     message: "Không có quyền xem thông tin thanh toán",
@@ -42,9 +45,11 @@ export const PaymentController = {
   // ===============================
   async uploadProof(req, res) {
     try {
-      const { payment_id } = req.body;
+      const { payment_id, request_id } = req.body;
       const userId = req.user.id;
       const files = req.files || [];
+
+      console.log("req.file: ", req.files);
 
       if (!payment_id) {
         return baseResponse(res, {
@@ -62,10 +67,18 @@ export const PaymentController = {
         });
       }
 
+      // ===============================
+      // 🔥 Giống createRequest – convert URL
+      // ===============================
+      const images = files.map(
+        (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
+      );
+
       const result = await PaymentModel.uploadProof({
         payment_id,
         user_id: userId,
-        files,
+        images, // ⬅ gửi URLs xuống DB
+        request_id
       });
 
       return baseResponse(res, {
@@ -91,7 +104,7 @@ export const PaymentController = {
       const { payment_id, action, reason } = req.body;
       const adminId = req.user.id;
 
-      if (!payment_id || !["approve", "reject"].includes(action)) {
+      if (!payment_id || !["approve"].includes(action)) {
         return baseResponse(res, {
           code: 400,
           status: false,

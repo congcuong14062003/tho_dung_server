@@ -27,7 +27,7 @@ const withTransaction = async (callback) => {
 /**
  * Ghi log thay đổi trạng thái request
  */
-const insertStatusLog = async ({
+export const insertStatusLog = async ({
   request_id,
   old_status = null,
   new_status,
@@ -47,7 +47,7 @@ const insertStatusLog = async ({
 /**
  * Cập nhật trạng thái request + các field phụ (cancel_reason, technician_id, completed_at...)
  */
-const updateRequestStatus = async (
+export const updateRequestStatus = async (
   request_id,
   new_status,
   extra = {},
@@ -87,7 +87,7 @@ const insertRequestImages = async (
   request_id,
   uploaded_by,
   images,
-  type = 'pending',
+  type = "pending",
   connection = db
 ) => {
   if (!images || images.length === 0) return;
@@ -591,62 +591,6 @@ export const RequestModel = {
         data: Object.values(mapItems),
       };
     }
-
-    // 4️⃣ Lấy thông tin thanh toán (CHỈ LẤY NẾU ĐÃ COMPLETED)
-    let payment = null;
-
-    if (request.status === "completed" || request.status === "paid") {
-      // Lấy payment info
-      const [paymentRows] = await db.query(
-        `
-      SELECT 
-        id AS payment_id,
-        amount,
-        payment_method,
-        payment_status,
-        created_at,
-        paid_at
-      FROM payments
-      WHERE request_id = ?
-      LIMIT 1
-      `,
-        [id]
-      );
-
-      if (paymentRows.length > 0) {
-        const pm = paymentRows[0];
-
-        // Lấy ảnh bằng chứng thanh toán
-        const [proofs] = await db.query(
-          `
-        SELECT 
-          id,
-          image_url,
-          uploaded_by,
-          created_at
-        FROM payment_proofs
-        WHERE payment_id = ?
-        ORDER BY created_at ASC
-        `,
-          [pm.payment_id]
-        );
-
-        payment = {
-          payment_id: pm.payment_id,
-          amount: Number(pm.amount),
-          method: pm.payment_method,
-          status: pm.payment_status,
-          paid_at: pm.paid_at,
-          proofs: proofs.map((p) => ({
-            id: p.id,
-            url: p.image_url,
-            uploaded_by: p.uploaded_by,
-            created_at: p.created_at,
-          })),
-        };
-      }
-    }
-
     // 5️⃣ Trả về full object
     return {
       id: request.id,
@@ -688,10 +632,7 @@ export const RequestModel = {
 
       survey_images: images.filter((img) => img.type === "survey"),
       scene_images: images.filter((img) => img.type === "pending"),
-
       quotations: quotationData,
-
-      payment, // ⭐⭐ Thông tin thanh toán (null nếu chưa completed)
     };
   },
 
@@ -816,34 +757,94 @@ export const RequestModel = {
     });
   },
 
-  // 8. Khách phản hồi báo giá
+  // 8. Khách phản hồi báo giá (Chấp nhận / Từ chối)
   async quotationResponse({ request_id, user_id, action, reason }) {
-    const [[request]] = await db.query(
-      `SELECT status FROM requests WHERE id = ? AND user_id = ?`,
-      [request_id, user_id]
-    );
-    if (!request)
-      throw new Error("Yêu cầu không tồn tại hoặc không phải của bạn");
+    return await withTransaction(async (conn) => {
+      // 1. Kiểm tra request tồn tại + thuộc về khách
+      const [[request]] = await conn.query(
+        `SELECT status, technician_id FROM requests WHERE id = ? AND user_id = ? FOR UPDATE`,
+        [request_id, user_id]
+      );
 
-    const newStatus = action === "accept" ? "in_progress" : "cancelled";
+      if (!request) {
+        throw new Error("Yêu cầu không tồn tại hoặc không phải của bạn");
+      }
 
-    await updateRequestStatus(request_id, newStatus, {
-      cancel_reason: action === "reject" ? reason : null,
-      cancel_by: action === "reject" ? user_id : null,
+      if (request.status !== "quoted" && request.status !== "customer_review") {
+        throw new Error(
+          "Chỉ được phản hồi khi đang ở trạng thái báo giá hoặc khách kiểm tra"
+        );
+      }
+
+      const isAccept = action === "accept";
+      const newRequestStatus = isAccept ? "in_progress" : "cancelled";
+
+      // 2. Nếu khách CHẤP NHẬN → update tất cả quotation_items thành in_progress
+      if (isAccept) {
+        // Lấy quotation hiện tại
+        const [[quotation]] = await conn.query(
+          `SELECT id FROM quotations WHERE request_id = ?`,
+          [request_id]
+        );
+
+        if (quotation) {
+          await conn.query(
+            `UPDATE quotation_items 
+             SET status = 'in_progress'
+             WHERE quotation_id = ? AND status = 'pending'`,
+            [quotation.id]
+          );
+
+          // Ghi log cho từng item (tùy chọn, nếu anh muốn chi tiết)
+          // Hoặc chỉ ghi 1 log chung ở request là đủ
+        }
+      }
+
+      // 3. Cập nhật trạng thái request
+      await updateRequestStatus(
+        request_id,
+        newRequestStatus,
+        {
+          cancel_reason: !isAccept ? reason : null,
+          cancel_by: !isAccept ? user_id : null,
+        },
+        conn
+      );
+
+      // 4. Ghi log trạng thái request
+      await insertStatusLog({
+        request_id,
+        old_status: request.status,
+        new_status: newRequestStatus,
+        changed_by: user_id,
+        reason: isAccept
+          ? "Khách hàng chấp nhận báo giá, bắt đầu thực hiện công việc"
+          : reason || "Khách hàng từ chối báo giá",
+        connection: conn,
+      });
+
+      // 5. (Tùy chọn) Ghi log riêng cho quotation_items nếu cần audit chi tiết
+      if (isAccept) {
+        const logId = generateId("QLOG");
+        await conn.query(
+          `INSERT INTO quotation_items_logs 
+           (id, quotation_item_id, old_status, new_status, note, changed_by, created_at)
+           SELECT ?, id, 'pending', 'in_progress', 'Khách chấp nhận báo giá', ?, NOW()
+           FROM quotation_items 
+           WHERE quotation_id = (SELECT id FROM quotations WHERE request_id = ?)`,
+          [logId + "_batch", user_id, request_id]
+        );
+      }
+
+      return {
+        success: true,
+        request_id,
+        new_status: newRequestStatus,
+        message: isAccept
+          ? "Chấp nhận báo giá thành công! Thợ sẽ bắt đầu làm ngay."
+          : "Đã từ chối báo giá.",
+      };
     });
-
-    await insertStatusLog({
-      request_id,
-      old_status: request.status,
-      new_status: newStatus,
-      changed_by: user_id,
-      reason:
-        action === "accept"
-          ? "Khách chấp nhận báo giá"
-          : reason || "Khách từ chối báo giá",
-    });
-
-    return { request_id, new_status: newStatus };
   },
 
   // 9. Cập nhật tiến độ từng mục công việc

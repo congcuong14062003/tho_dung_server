@@ -1,12 +1,34 @@
 import db from "../config/db.js";
 import { generateId } from "../utils/crypto.js";
+import { insertStatusLog, RequestModel, updateRequestStatus } from "./request.model.js";
+// ==============================
+// 🔹 HÀM DÙNG CHUNG (PRIVATE)
+// ==============================
 
+/**
+ * Wrapper transaction – dùng cho mọi thao tác cần atomic
+ */
+const withTransaction = async (callback) => {
+  const connection = await db.getConnection();
+  try {
+    await connection.beginTransaction();
+    const result = await callback(connection);
+    await connection.commit();
+    return result;
+  } catch (error) {
+    await connection.rollback();
+    throw error;
+  } finally {
+    connection.release();
+  }
+};
 export const PaymentModel = {
   async getPaymentDetail(requestId) {
     // 1. Lấy payment + số tiền cần thanh toán
     const [paymentRows] = await db.query(
       `SELECT p.*, COALESCE(q.total_price, p.amount) AS amount_to_pay,
-      r.name_request
+      r.name_request,
+      r.status as request_status
      FROM payments p
      LEFT JOIN quotations q ON p.request_id = q.request_id
      JOIN requests r ON p.request_id = r.id
@@ -88,6 +110,7 @@ export const PaymentModel = {
       payment_id: payment.id,
       request_id: requestId,
       name_request: payment.name_request,
+      request_status: payment.request_status,
       amount: amount,
       payment_method: payment.payment_method || "qr",
       payment_status: payment.payment_status,
@@ -107,7 +130,7 @@ export const PaymentModel = {
       // Bằng chứng khách up
       proofs: proofs.map((p) => ({
         id: p.id,
-        url: `${process.env.URL_SERVER}/uploads/${p.image_url}`,
+        url: p.image_url,
         uploaded_by: p.uploaded_by,
         created_at: p.created_at,
       })),
@@ -122,48 +145,136 @@ export const PaymentModel = {
     };
   },
 
+  // // ===============================
+  // // 🔹 Model: Upload bill payment
+  // // ===============================
+  // async uploadProof({ payment_id, user_id, images, request_id }) {
+  //   // 1 Kiểm tra payment tồn tại
+  //   const [[payment]] = await db.query(
+  //     `SELECT id, payment_status FROM payments WHERE id = ?`,
+  //     [payment_id]
+  //   );
+
+  //   if (!payment) throw new Error("Không tìm thấy payment");
+
+  //   if (!["pending"].includes(payment.payment_status)) {
+  //     throw new Error("Payment không còn ở trạng thái pending");
+  //   }
+
+  //   // 2. Lấy ảnh cũ (nếu có)
+  //   const [oldProofs] = await db.query(
+  //     `SELECT image_url FROM payment_proofs WHERE payment_id = ?`,
+  //     [payment_id]
+  //   );
+
+  //   // 3. Xóa file vật lý
+  //   for (const p of oldProofs) {
+  //     try {
+  //       const fileName = p.image_url.split("/uploads/")[1];
+  //       const filePath = path.join(process.cwd(), "uploads", fileName);
+
+  //       if (fs.existsSync(filePath)) {
+  //         fs.unlinkSync(filePath);
+  //       }
+  //     } catch (err) {
+  //       console.error("Không thể xóa ảnh cũ:", err);
+  //     }
+  //   }
+
+  //   // 4. Xoá record ảnh cũ trong DB
+  //   await db.query(`DELETE FROM payment_proofs WHERE payment_id = ?`, [
+  //     payment_id,
+  //   ]);
+
+  //   // Lưu ảnh – dùng URLs từ controller
+  //   const values = images.map((url) => [
+  //     generateId("PPF"),
+  //     payment_id,
+  //     user_id,
+  //     url, // ⬅ Lưu URL trực tiếp
+  //   ]);
+
+  //   await db.query(
+  //     `INSERT INTO payment_proofs (id, payment_id, uploaded_by, image_url) VALUES ?`,
+  //     [values]
+  //   );
+  //   return {
+  //     payment_id,
+  //     proof_count: images.length,
+  //   };
+  // },
+
   // ===============================
-  // 🔹 Model: Upload bill payment
+  // 🔹 Model: Upload bill payment + tự động chuyển trạng thái request
   // ===============================
-  async uploadProof({ payment_id, user_id, files }) {
-    // Kiểm tra payment tồn tại
-    const [[payment]] = await db.query(
-      `SELECT id, payment_status FROM payments WHERE id = ?`,
-      [payment_id]
-    );
+  async uploadProof({ payment_id, user_id, images, request_id }) {
+    // Dùng transaction để đảm bảo atomic (cập nhật ảnh + trạng thái request)
+    return await withTransaction(async (conn) => {
+      // 1. Kiểm tra payment tồn tại + đang pending
+      const [[payment]] = await conn.query(
+        `SELECT id, payment_status, request_id FROM payments WHERE id = ?`,
+        [payment_id]
+      );
 
-    if (!payment) throw new Error("Không tìm thấy payment");
+      if (!payment) throw new Error("Không tìm thấy payment");
+      if (payment.payment_status !== "pending") {
+        throw new Error("Payment không còn ở trạng thái pending");
+      }
 
-    if (!["pending"].includes(payment.payment_status)) {
-      throw new Error("Payment không còn ở trạng thái pending");
-    }
+      // Lấy trạng thái hiện tại của request (để log)
+      const [[request]] = await conn.query(
+        `SELECT status FROM requests WHERE id = ?`,
+        [request_id || payment.request_id]
+      );
 
-    // Lưu ảnh
-    const values = files.map((f) => [
-      generateId("PPF"),
-      payment_id,
-      user_id,
-      f.path.replace("uploads\\", ""), // hoặc domain anh, tùy setup
-    ]);
+      if (!request) throw new Error("Không tìm thấy request");
+      await conn.query(`DELETE FROM payment_proofs WHERE payment_id = ?`, [
+        payment_id,
+      ]);
 
-    await db.query(
-      `INSERT INTO payment_proofs (id, payment_id, uploaded_by, image_url) VALUES ?`,
-      [values]
-    );
+      // 3. Lưu ảnh mới
+      if (images && images.length > 0) {
+        const values = images.map((url) => [
+          generateId("PPF"),
+          payment_id,
+          user_id,
+          url,
+        ]);
 
-    // Update status sang "review"
-    await db.query(
-      `UPDATE payments SET payment_status = 'review' WHERE id = ?`,
-      [payment_id]
-    );
+        await conn.query(
+          `INSERT INTO payment_proofs (id, payment_id, uploaded_by, image_url) VALUES ?`,
+          [values]
+        );
+      }
 
-    return {
-      payment_id,
-      proof_count: files.length,
-      status: "review",
-    };
+      // 4. 🔥 TỰ ĐỘNG CHUYỂN TRẠNG THÁI REQUEST: payment → payment_review
+      if (request.status === "payment") {
+        await updateRequestStatus(
+          request_id || payment.request_id,
+          "payment_review",
+          {},
+          conn
+        );
+
+        await insertStatusLog({
+          request_id: request_id || payment.request_id,
+          old_status: "payment",
+          new_status: "payment_review",
+          changed_by: user_id,
+          reason: "Khách hàng/thợ upload bằng chứng thanh toán",
+          connection: conn,
+        });
+      }
+      // Nếu đã ở payment_review rồi thì không cần cập nhật lại (tránh spam log)
+
+      return {
+        payment_id,
+        request_id: request_id || payment.request_id,
+        proof_count: images.length,
+        request_status_updated: request.status === "payment",
+      };
+    });
   },
-
   // ===============================
   // 🔹 Model: admin verify payment
   // ===============================
@@ -173,9 +284,9 @@ export const PaymentModel = {
     // Update payment
     await db.query(
       `UPDATE payments 
-     SET payment_status = ?, verified_by = ?, verified_at = NOW(), reject_reason = ?
+     SET payment_status = ?
      WHERE id = ?`,
-      [newStatus, adminId, reason || null, payment_id]
+      [newStatus, payment_id]
     );
 
     // Lấy request_id để update request nếu cần
@@ -186,7 +297,7 @@ export const PaymentModel = {
 
     if (action === "approve") {
       // Thanh toán thành công → request hoàn tất hẳn
-      await db.query(`UPDATE requests SET status = 'paid' WHERE id = ?`, [
+      await db.query(`UPDATE requests SET status = 'completed' WHERE id = ?`, [
         reqInfo.request_id,
       ]);
     }

@@ -43,40 +43,47 @@ export const TechnicianModel = {
       );
     }
   },
+
   async getAllWithUser({
     page = 1,
     size = 10,
-    keySearch = "",
-    status = "all",
+    keySearch,
+    status
   }) {
     const offset = (page - 1) * size;
-
-    // Câu điều kiện WHERE linh hoạt
-    let whereClause = `u.role = 'technician'`;
     const params = [];
 
-    // Tìm kiếm theo tên hoặc số điện thoại
+    // WHERE mặc định: role = technician
+    let whereClause = `u.role = 'technician'`;
+
+    // Filter theo status
+    if (status === "active") {
+      whereClause += ` AND u.status = 'active'`;
+    } else if (status === "inactive") {
+      whereClause += ` AND u.status = 'inactive'`;
+    } else if (status === "pending") {
+      whereClause += ` AND u.status = 'pending'`;
+    } else {
+      // all = active + inactive
+      whereClause += ` AND u.status IN ('active', 'inactive')`;
+    }
+
+    // Search
     if (keySearch && keySearch.trim() !== "") {
       whereClause += ` AND (u.full_name LIKE ? OR u.phone LIKE ?)`;
       params.push(`%${keySearch}%`, `%${keySearch}%`);
     }
 
-    // Lọc trạng thái nếu khác 'all'
-    if (status !== "all") {
-      whereClause += ` AND u.status = ?`;
-      params.push(status);
-    }
-
-    // Đếm tổng số dòng
+    // Count
     const [[{ total }]] = await db.query(
       `SELECT COUNT(*) AS total
-       FROM users u
-       INNER JOIN technician_profiles t ON u.id = t.user_id
-       WHERE ${whereClause}`,
+     FROM users u
+     INNER JOIN technician_profiles t ON u.id = t.user_id
+     WHERE ${whereClause}`,
       params
     );
 
-    // Lấy dữ liệu phân trang
+    // Data
     const [rows] = await db.query(
       `
     SELECT 
@@ -88,8 +95,8 @@ export const TechnicianModel = {
       u.avatar_link,
       t.id AS technician_id,
       t.skill_category_id,
-      c.name AS skill_category_name,  -- 🔹 Tên kỹ năng (join từ bảng categories)
-      c.color AS skill_category_color, -- (nếu muốn lấy thêm màu category)
+      c.name AS skill_category_name,
+      c.color AS skill_category_color,
       t.experience_years,
       t.description,
       t.working_area,
@@ -98,16 +105,17 @@ export const TechnicianModel = {
       t.updated_at
     FROM users u
     INNER JOIN technician_profiles t ON u.id = t.user_id
-    LEFT JOIN service_categories c ON t.skill_category_id = c.id   -- 🔹 join thêm bảng category
+    LEFT JOIN service_categories c ON t.skill_category_id = c.id
     WHERE ${whereClause}
     ORDER BY t.created_at DESC
     LIMIT ? OFFSET ?
-  `,
+    `,
       [...params, size, offset]
     );
 
     return { data: rows, total };
   },
+
   /**
    * Lấy đầy đủ thông tin profile thợ theo user_id
    * Dùng khi login thợ → trả về workerInfor hoàn chỉnh

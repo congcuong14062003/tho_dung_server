@@ -13,13 +13,14 @@ CREATE TABLE users (
   id_card VARCHAR(20),
   avatar_link VARCHAR(255) DEFAULT 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
   role ENUM('customer','technician','admin') DEFAULT 'customer',
-  status ENUM('active','inactive','pending') DEFAULT 'pending',
+  status ENUM('active','inactive','pending') DEFAULT 'active',
   verified BOOLEAN DEFAULT FALSE,
   otp_code VARCHAR(10),
   otp_expiry DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
 -- ========================== -- TECHNICIAN PROFILES -- ========================== -- ========================== -- 
  CREATE TABLE technician_profiles ( 
  id INT AUTO_INCREMENT PRIMARY KEY, 
@@ -81,7 +82,7 @@ CREATE TABLE requests (
   address VARCHAR(255),
   requested_date VARCHAR(10),
   requested_time VARCHAR(10), 
-  status ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'customer_review', 'completed', 'cancelled', 'maintenance') DEFAULT 'pending',
+  status ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'customer_review',  'payment', 'payment_review', 'completed', 'cancelled', 'maintenance') DEFAULT 'pending',
   cancel_reason TEXT NULL,
   cancel_by VARCHAR(50) NULL,
   completed_at DATETIME NULL,
@@ -95,8 +96,8 @@ CREATE TABLE requests (
 );
 
 -- ALTER TABLE requests 
--- MODIFY COLUMN status 
--- ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'customer_review', 'completed', 'cancelled', 'maintenance') 
+-- MODIFY COLUMN 
+-- status ENUM('pending', 'assigning', 'assigned', 'quoted', 'in_progress', 'customer_review', 'payment', 'payment_review', 'completed', 'cancelled', 'maintenance') DEFAULT 'pending'
 -- DEFAULT 'pending';
 
 
@@ -149,11 +150,14 @@ CREATE TABLE quotation_items_images (
   quotation_item_id VARCHAR(50) NOT NULL,
   uploaded_by VARCHAR(50) NOT NULL,
   image_url VARCHAR(255) NOT NULL,
-  image_type ENUM('before', 'during', 'after') DEFAULT 'during',
+  image_type ENUM('before', 'during', 'after') DEFAULT 'after',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY (quotation_item_id) REFERENCES quotation_items(id),
   FOREIGN KEY (uploaded_by) REFERENCES users(id)
 );
+-- ALTER TABLE quotation_items_images 
+-- MODIFY COLUMN  
+-- image_type ENUM('before', 'during', 'after') DEFAULT 'after'
 
 CREATE TABLE quotation_items_logs (
   id VARCHAR(50) PRIMARY KEY,
@@ -192,6 +196,7 @@ CREATE TABLE payment_proofs (
   FOREIGN KEY (payment_id) REFERENCES payments(id),
   FOREIGN KEY (uploaded_by) REFERENCES users(id)
 );
+
 
 -- ==========================
 -- REVIEWS

@@ -5,34 +5,34 @@ import { TechnicianController } from "../controllers/technician.controller.js";
 
 const router = express.Router();
 router.post(
-  "/get-all-woker",
+  "/get-all-technicians",
   verifyToken,
   authorizeRoles("admin"),
   TechnicianController.getAllTechnicians
 );
 // User nộp đơn
 router.post(
-  "/technician/request",
+  "/request",
   verifyToken,
   authorizeRoles("customer"),
   TechnicianController.requestBecomeTechnician
 );
 
-// Admin
-router.get(
-  "/admin/technician/pending",
-  verifyToken,
-  authorizeRoles("admin"),
-  TechnicianController.getPendingTechnicians
-);
+// // Admin
+// router.post(
+//   "/admin/pending",
+//   verifyToken,
+//   authorizeRoles("admin"),
+//   TechnicianController.getAllTechnicians
+// );
 router.post(
-  "/admin/technician/approve",
+  "/admin/approve",
   verifyToken,
   authorizeRoles("admin"),
   TechnicianController.approveTechnician
 );
 router.post(
-  "/admin/technician/reject",
+  "/admin/reject",
   verifyToken,
   authorizeRoles("admin"),
   TechnicianController.rejectTechnician

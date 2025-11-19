@@ -11,7 +11,7 @@ const router = express.Router();
 router.post(
   "/",
   verifyToken,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   upload.array("images", 5), // ✅ đổi từ icon sang images (tối đa 5 ảnh)
   // convertHeicToJpg, // ✅ thêm bước chuyển HEIC sang JPG
   RequestController.create

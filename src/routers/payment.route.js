@@ -14,7 +14,7 @@ router.get(
 router.post(
   "/upload-proof",
   verifyToken,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   upload.array("images", 5),
   PaymentController.uploadProof
 );

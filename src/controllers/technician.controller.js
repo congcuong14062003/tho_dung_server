@@ -6,7 +6,7 @@ export const TechnicianController = {
   // Lấy danh sách thợ với phân trang và tìm kiếm
   async getAllTechnicians(req, res) {
     try {
-      const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
+      const { page = 1, size = 10, keySearch, status } = req.body;
 
       // Ép kiểu số nguyên để tránh lỗi
       const pageNum = parseInt(page, 10);
@@ -198,7 +198,7 @@ export const TechnicianController = {
   // Admin xem danh sách chờ duyệt
   async getPendingTechnicians(req, res) {
     try {
-      const { page = 1, size = 10, keySearch = "" } = req.query;
+      const { page = 1, size = 10, keySearch = "" } = req.body;
       const result = await TechnicianModel.getPendingTechnicians({
         page,
         size,
