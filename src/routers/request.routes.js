@@ -21,7 +21,7 @@ router.post(
 router.post(
   "/cancel",
   verifyToken,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   RequestController.cancelRequest
 );
 
@@ -92,7 +92,7 @@ router.post(
 router.post(
   "/quotation/response",
   verifyToken,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   RequestController.quotationResponse
 );
 

@@ -828,11 +828,18 @@ export const RequestModel = {
         const logId = generateId("QLOG");
         await conn.query(
           `INSERT INTO quotation_items_logs 
-           (id, quotation_item_id, old_status, new_status, note, changed_by, created_at)
-           SELECT ?, id, 'pending', 'in_progress', 'Khách chấp nhận báo giá', ?, NOW()
-           FROM quotation_items 
-           WHERE quotation_id = (SELECT id FROM quotations WHERE request_id = ?)`,
-          [logId + "_batch", user_id, request_id]
+          (id, quotation_item_id, old_status, new_status, note, changed_by, created_at)
+          SELECT 
+            CONCAT('QLOG_', id, '_', UUID()), 
+            id, 
+            'pending', 
+            'in_progress', 
+            'Khách chấp nhận báo giá', 
+            ?, 
+            NOW()
+          FROM quotation_items 
+          WHERE quotation_id = (SELECT id FROM quotations WHERE request_id = ?)`,
+          [user_id, request_id]
         );
       }
 

@@ -42,9 +42,7 @@ export const TechnicianController = {
     }
   },
 
-  // ============================
-  // 1️⃣ User đăng ký lên làm thợ
-  // ============================
+  // 1. User nộp đơn làm thợ → chỉ tạo request, KHÔNG ĐỔI role/status
   async applyToBecomeTechnician(req, res) {
     try {
       const userId = req.user.id;
@@ -56,7 +54,6 @@ export const TechnicianController = {
         certifications,
       } = req.body;
 
-      // Check user tồn tại & chưa phải technician
       const user = await UserModel.getById(userId);
       if (!user) {
         return baseResponse(res, {
@@ -74,11 +71,20 @@ export const TechnicianController = {
         });
       }
 
-      // Cập nhật trạng thái user -> pending thợ
-      await UserModel.update(userId, { role: "technician", status: "pending" });
+      // Kiểm tra đã có đơn đang pending chưa
+      const existingRequest = await TechnicianModel.getPendingRequestByUser(
+        userId
+      );
+      if (existingRequest) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Bạn đã nộp đơn rồi, đang chờ duyệt!",
+        });
+      }
 
-      // Tạo hồ sơ thợ
-      await TechnicianModel.createProfile({
+      // Tạo request mới
+      await TechnicianModel.createRequest({
         user_id: userId,
         skill_category_id,
         experience_years,
@@ -90,116 +96,109 @@ export const TechnicianController = {
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: "Đăng ký làm thợ thành công. Đang chờ admin duyệt.",
+        message: "Gửi yêu cầu làm thợ thành công! Đang chờ admin duyệt.",
       });
     } catch (err) {
       console.error(err);
       return baseResponse(res, {
         code: 500,
         status: false,
-        message: "Lỗi server khi đăng ký làm thợ",
+        message: "Lỗi server",
       });
     }
   },
 
-  // ============================
-  // 2️⃣ Admin duyệt thợ
-  // ============================
+  // 2. Admin duyệt → mới đổi role + chuyển dữ liệu sang technician_profiles
   async approveTechnician(req, res) {
     try {
-      const { userId } = req.params;
+      const { request_id } = req.body; // hoặc dùng user_id cũng được
 
-      const user = await UserModel.getById(userId);
-      if (!user) {
-        return baseResponse(res, {
-          code: 404,
-          status: false,
-          message: "User không tồn tại",
-        });
-      }
-
-      if (user.status === "active") {
+      const request = await TechnicianModel.getRequestById(request_id);
+      if (!request || request.status !== "pending") {
         return baseResponse(res, {
           code: 400,
           status: false,
-          message: "Người này đã là thợ (đã duyệt).",
+          message: "Yêu cầu không hợp lệ hoặc đã xử lý",
         });
       }
 
-      // cập nhật trạng thái ACTIVE
-      await UserModel.updateUser(userId, { status: "active" });
+      const userId = request.user_id;
+      const adminId = req.user.id;
+
+      // 1. Cập nhật user thành technician + active
+      await UserModel.updateUser(userId, {
+        role: "technician",
+        status: "active",
+      });
+
+      // 2. Tạo profile chính thức
+      await TechnicianModel.createProfileFromRequest(request);
+
+      // 3. Cập nhật trạng thái request
+      await TechnicianModel.updateRequestStatus(
+        request_id,
+        "approved",
+        adminId
+      );
 
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: "Duyệt thợ thành công!",
+        message: `Đã duyệt thành công thợ "${request.full_name}"`,
       });
     } catch (err) {
       console.error(err);
       return baseResponse(res, {
         code: 500,
         status: false,
-        message: "Lỗi server khi duyệt thợ",
+        message: "Lỗi duyệt thợ",
       });
     }
   },
 
-  // User nộp đơn
-  async requestBecomeTechnician(req, res) {
-    try {
-      const userId = req.user.id;
-      const data = req.body;
-
-      await TechnicianModel.requestBecomeTechnician({
-        user_id: userId,
-        ...data,
-      });
-
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Đã gửi đơn xin làm thợ thành công! Vui lòng chờ admin duyệt.",
-      });
-    } catch (error) {
-      return baseResponse(res, { code: 500, message: error.message });
-    }
-  },
-
-  // Admin duyệt
-  async approveTechnician(req, res) {
-    try {
-      const { user_id } = req.body;
-      await TechnicianModel.approveTechnician(user_id, req.user.id);
-      return baseResponse(res, {
-        code: 200,
-        status: true,
-        message: "Duyệt thợ thành công",
-      });
-    } catch (error) {
-      return baseResponse(res, { code: 500, message: error.message });
-    }
-  },
-
-  // Admin từ chối
+  // 3. Admin từ chối
   async rejectTechnician(req, res) {
     try {
-      const { user_id, reason } = req.body;
-      await TechnicianModel.rejectTechnician(user_id, req.user.id, reason);
+      const { request_id, reason } = req.body;
+      const adminId = req.user.id;
+
+      const request = await TechnicianModel.getRequestById(request_id);
+
+      console.log("request: ", request);
+
+      if (!request || request.status !== "pending") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Yêu cầu không hợp lệ",
+        });
+      }
+
+      await TechnicianModel.updateRequestStatus(
+        request_id,
+        "rejected",
+        adminId,
+        reason
+      );
+
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: "Từ chối đơn thành công",
+        message: "Đã từ chối yêu cầu làm thợ",
       });
-    } catch (error) {
-      return baseResponse(res, { code: 500, message: error.message });
+    } catch (err) {
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi từ chối",
+      });
     }
   },
-
-  // Admin xem danh sách chờ duyệt
+  // Admin xem danh sách các yêu cầu muốn làm thợ
   async getPendingTechnicians(req, res) {
     try {
       const { page = 1, size = 10, keySearch = "" } = req.body;
-      const result = await TechnicianModel.getPendingTechnicians({
+      const result = await TechnicianModel.getPendingRequests({
         page,
         size,
         keySearch,
@@ -207,6 +206,123 @@ export const TechnicianController = {
       return baseResponse(res, { code: 200, status: true, data: result });
     } catch (error) {
       return baseResponse(res, { code: 500, message: error.message });
+    }
+  },
+
+  // ==================== KHÓA THỢ ====================
+  async blockTechnician(req, res) {
+    try {
+      const { user_id } = req.body;
+      const adminId = req.user.id;
+
+      if (!user_id) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu user_id",
+        });
+      }
+
+      const user = await UserModel.getById(user_id);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      if (user.role !== "technician") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Đây không phải tài khoản thợ",
+        });
+      }
+
+      if (user.status !== "active") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Tài khoản đã bị khóa hoặc đang chờ duyệt",
+        });
+      }
+
+      // Khóa: chuyển status = 'inactive' (hoặc 'banned' tùy anh muốn)
+      await UserModel.updateUser(user_id, { status: "inactive" });
+
+      // (Tùy chọn) Ghi log hành động admin
+      // await AdminLogModel.create({ admin_id: adminId, action: "block_technician", target_id: user_id });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: `Đã khóa tài khoản thợ "${user.full_name}" thành công`,
+      });
+    } catch (error) {
+      console.error("Lỗi khóa thợ:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server",
+      });
+    }
+  },
+
+  // ==================== MỞ KHÓA THỢ ====================
+  async unblockTechnician(req, res) {
+    try {
+      const { user_id } = req.body;
+      const adminId = req.user.id;
+
+      if (!user_id) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu user_id",
+        });
+      }
+
+      const user = await UserModel.getById(user_id);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      if (user.role !== "technician") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Đây không phải tài khoản thợ",
+        });
+      }
+
+      if (user.status !== "inactive") {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Tài khoản đang hoạt động hoặc chờ duyệt",
+        });
+      }
+
+      // Mở khóa: chuyển lại status = 'active'
+      await UserModel.updateUser(user_id, { status: "active" });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: `Đã mở khóa thành công cho thợ "${user.full_name}"`,
+      });
+    } catch (error) {
+      console.error("Lỗi mở khóa thợ:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server",
+      });
     }
   },
 };

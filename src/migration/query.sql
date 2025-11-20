@@ -13,13 +13,39 @@ CREATE TABLE users (
   id_card VARCHAR(20),
   avatar_link VARCHAR(255) DEFAULT 'https://cdn-icons-png.flaticon.com/512/149/149071.png',
   role ENUM('customer','technician','admin') DEFAULT 'customer',
-  status ENUM('active','inactive','pending') DEFAULT 'active',
+  status ENUM('active','inactive') DEFAULT 'active',
   verified BOOLEAN DEFAULT FALSE,
   otp_code VARCHAR(10),
   otp_expiry DATETIME,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
+
+
+
+
+
+-- ALTER TABLE users 
+-- MODIFY COLUMN 
+-- status ENUM('active','inactive') DEFAULT 'active';
+
+-- ==========================
+-- SERVICE CATEGORIES
+-- ==========================
+CREATE TABLE service_categories (
+  id VARCHAR(50) PRIMARY KEY,
+  name VARCHAR(100) NOT NULL,
+  description TEXT,
+  icon VARCHAR(255),
+  status TINYINT(1) DEFAULT 1,
+  color VARCHAR(10) DEFAULT '#4A90E2',
+  `order` INT DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+);
+
+
+
 
 -- ========================== -- TECHNICIAN PROFILES -- ========================== -- ========================== -- 
  CREATE TABLE technician_profiles ( 
@@ -37,22 +63,27 @@ CREATE TABLE users (
  FOREIGN KEY (skill_category_id) REFERENCES service_categories(id) );
  
  
--- ==========================
--- SERVICE CATEGORIES
--- ==========================
-CREATE TABLE service_categories (
+ -- Thêm vào file SQL của anh (sau bảng technician_profiles)
+CREATE TABLE technician_requests (
   id VARCHAR(50) PRIMARY KEY,
-  name VARCHAR(100) NOT NULL,
+  user_id VARCHAR(50) NOT NULL,
+  skill_category_id VARCHAR(50) NOT NULL,
+  experience_years INT DEFAULT 0,
+  working_area VARCHAR(255),
   description TEXT,
-  icon VARCHAR(255),
-  status TINYINT(1) DEFAULT 1,
-  color VARCHAR(10) DEFAULT '#4A90E2',
-  `order` INT DEFAULT 0,
+  certifications TEXT,
+  status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
+  rejected_reason TEXT NULL,
+  approved_by VARCHAR(50) NULL,
+  rejected_by VARCHAR(50) NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  
+  FOREIGN KEY (user_id) REFERENCES users(id),
+  FOREIGN KEY (skill_category_id) REFERENCES service_categories(id),
+  FOREIGN KEY (approved_by) REFERENCES users(id),
+  FOREIGN KEY (rejected_by) REFERENCES users(id)
 );
-
-
 
 -- ==========================
 -- SERVICES
@@ -160,7 +191,7 @@ CREATE TABLE quotation_items_images (
 -- image_type ENUM('before', 'during', 'after') DEFAULT 'after'
 
 CREATE TABLE quotation_items_logs (
-  id VARCHAR(50) PRIMARY KEY,
+  id VARCHAR(255) PRIMARY KEY,
   quotation_item_id VARCHAR(50) NOT NULL,
   old_status ENUM('pending', 'in_progress', 'completed') NULL,
   new_status ENUM('pending', 'in_progress', 'completed') NOT NULL,

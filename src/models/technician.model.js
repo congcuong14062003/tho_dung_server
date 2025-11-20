@@ -1,4 +1,5 @@
 import db from "../config/db.js";
+import { generateId } from "../utils/crypto.js";
 
 export const TechnicianModel = {
   async createOrUpdateProfile({
@@ -44,12 +45,7 @@ export const TechnicianModel = {
     }
   },
 
-  async getAllWithUser({
-    page = 1,
-    size = 10,
-    keySearch,
-    status
-  }) {
+  async getAllWithUser({ page = 1, size = 10, keySearch, status }) {
     const offset = (page - 1) * size;
     const params = [];
 
@@ -61,8 +57,6 @@ export const TechnicianModel = {
       whereClause += ` AND u.status = 'active'`;
     } else if (status === "inactive") {
       whereClause += ` AND u.status = 'inactive'`;
-    } else if (status === "pending") {
-      whereClause += ` AND u.status = 'pending'`;
     } else {
       // all = active + inactive
       whereClause += ` AND u.status IN ('active', 'inactive')`;
@@ -116,6 +110,144 @@ export const TechnicianModel = {
     return { data: rows, total };
   },
 
+  async createRequest(data) {
+    const requestId = generateId("tech_req_"); // hàm tạo ID của anh
+    await db.query(
+      `INSERT INTO technician_requests 
+     (id, user_id, skill_category_id, experience_years, working_area, description, certifications)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+      [
+        requestId,
+        data.user_id,
+        data.skill_category_id,
+        data.experience_years || 0,
+        data.working_area,
+        data.description,
+        data.certifications,
+      ]
+    );
+    return requestId;
+  },
+
+  async getPendingRequestByUser(userId) {
+    const [rows] = await db.query(
+      `SELECT * FROM technician_requests WHERE user_id = ? AND status = 'pending' LIMIT 1`,
+      [userId]
+    );
+    return rows[0] || null;
+  },
+
+  async getRequestById(requestId) {
+    const [rows] = await db.query(
+      `SELECT tr.*, u.full_name, u.phone 
+     FROM technician_requests tr 
+     JOIN users u ON tr.user_id = u.id 
+     WHERE tr.id = ?`,
+      [requestId]
+    );
+    return rows[0] || null;
+  },
+
+  async createProfileFromRequest(request) {
+    await db.query(
+      `INSERT INTO technician_profiles 
+     (user_id, skill_category_id, experience_years, working_area, description, certifications)
+     VALUES (?, ?, ?, ?, ?, ?) 
+     ON DUPLICATE KEY UPDATE 
+       skill_category_id = VALUES(skill_category_id),
+       experience_years = VALUES(experience_years),
+       working_area = VALUES(working_area),
+       description = VALUES(description),
+       certifications = VALUES(certifications)`,
+      [
+        request.user_id,
+        request.skill_category_id,
+        request.experience_years,
+        request.working_area,
+        request.description,
+        request.certifications,
+      ]
+    );
+  },
+
+  async updateRequestStatus(requestId, status, adminId, reason = null) {
+    const fields = { status };
+    if (status === "approved") fields.approved_by = adminId;
+    if (status === "rejected") {
+      fields.rejected_by = adminId;
+      fields.rejected_reason = reason;
+    }
+
+    const sets = Object.keys(fields)
+      .map((k) => `${k} = ?`)
+      .join(", ");
+    const values = Object.values(fields);
+    values.push(requestId);
+
+    await db.query(
+      `UPDATE technician_requests SET ${sets} WHERE id = ?`,
+      values
+    );
+  },
+
+  // Lấy danh sách chờ duyệt (dùng cho PendingList)
+  // Lấy danh sách yêu cầu (tất cả status)
+  async getPendingRequests({ page = 1, size = 10, keySearch = "" }) {
+    const offset = (page - 1) * size;
+    const search = `%${keySearch}%`;
+
+    // === LẤY DATA ===
+    const [rows] = await db.query(
+      `SELECT 
+        tr.id AS request_id,
+        tr.user_id,
+        u.full_name,
+        u.phone,
+        u.avatar_link,
+        tr.skill_category_id,
+        sc.name AS skill_category_name,
+        sc.color AS skill_category_color,
+        tr.experience_years,
+        tr.working_area,
+        tr.description,
+        tr.certifications,
+        tr.status,
+        tr.rejected_reason,
+        tr.created_at
+      FROM technician_requests tr
+      JOIN users u ON tr.user_id = u.id
+      LEFT JOIN service_categories sc ON tr.skill_category_id = sc.id
+      WHERE 
+        (
+             tr.id LIKE ?
+          OR u.full_name LIKE ?
+          OR u.phone LIKE ?
+          OR tr.working_area LIKE ?
+          OR tr.description LIKE ?
+        )
+      ORDER BY tr.created_at DESC
+      LIMIT ? OFFSET ?`,
+      [search, search, search, search, search, size, offset]
+    );
+
+    // === ĐẾM TỔNG ===
+    const [[{ total }]] = await db.query(
+      `SELECT COUNT(*) AS total
+      FROM technician_requests tr
+      JOIN users u ON tr.user_id = u.id
+      WHERE 
+        (
+             tr.id LIKE ?
+          OR u.full_name LIKE ?
+          OR u.phone LIKE ?
+          OR tr.working_area LIKE ?
+          OR tr.description LIKE ?
+        )`,
+      [search, search, search, search, search]
+    );
+
+    return { data: rows, total: total || 0 };
+  },
   /**
    * Lấy đầy đủ thông tin profile thợ theo user_id
    * Dùng khi login thợ → trả về workerInfor hoàn chỉnh
@@ -265,46 +397,6 @@ export const TechnicianModel = {
       [user_id]
     );
 
-    return { success: true, message: "Đã từ chối đơn" };
-  },
-
-  // Admin lấy danh sách thợ chờ duyệt
-  async getPendingTechnicians({ page = 1, size = 10, keySearch = "" }) {
-    const offset = (page - 1) * size;
-    const search = `%${keySearch}%`;
-
-    const [rows] = await db.query(
-      `SELECT 
-        u.id AS user_id,
-        u.full_name,
-        u.phone,
-        u.id_card,
-        tp.skill_category_id,
-        sc.name AS category_name,
-        tp.experience_years,
-        tp.working_area,
-        tp.description,
-        tp.certifications,
-        tp.created_at
-       FROM users u
-       JOIN technician_profiles tp ON u.id = tp.user_id
-       JOIN service_categories sc ON tp.skill_category_id = sc.id
-       WHERE u.role = 'technician' AND u.status = 'pending'
-         AND (u.full_name LIKE ? OR u.phone LIKE ?)
-       ORDER BY tp.created_at DESC
-       LIMIT ? OFFSET ?`,
-      [search, search, size, offset]
-    );
-
-    const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total
-       FROM users u
-       JOIN technician_profiles tp ON u.id = tp.user_id
-       WHERE u.role = 'technician' AND u.status = 'pending'
-         AND (u.full_name LIKE ? OR u.phone LIKE ?)`,
-      [search, search]
-    );
-
-    return { data: rows, total };
+    return { success: true, message: "Đã từ chối yêu cầu" };
   },
 };
