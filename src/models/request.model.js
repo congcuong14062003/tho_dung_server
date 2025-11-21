@@ -545,6 +545,7 @@ export const RequestModel = {
         qi.price AS item_price,
         qi.status AS item_status,
         qi.note AS item_note,
+        qi.reason AS item_reason,
         ii.id AS image_id,
         ii.image_url AS image_url,
         ii.created_at AS image_created_at
@@ -573,6 +574,7 @@ export const RequestModel = {
             price: Number(row.item_price),
             status: row.item_status,
             note: row.item_note,
+            reason: row.item_reason,
             images: [],
           };
         }
@@ -864,7 +866,7 @@ export const RequestModel = {
       if (!quotation_id) throw new Error("Không tìm thấy báo giá");
 
       for (const item of items) {
-        const { id: item_id, status, note, images = [] } = item;
+        const { id: item_id, status, note, images = [], reason } = item;
         if (!item_id) continue;
 
         const [[old]] = await conn.query(
@@ -874,8 +876,8 @@ export const RequestModel = {
         if (!old) continue;
 
         await conn.query(
-          `UPDATE quotation_items SET status = ?, note = ? WHERE id = ?`,
-          [status, note || null, item_id]
+          `UPDATE quotation_items SET status = ?, note = ?, reason = ? WHERE id = ?`,
+          [status, note || null, reason || null,  item_id]
         );
 
         await conn.query(
@@ -899,7 +901,7 @@ export const RequestModel = {
           `INSERT INTO quotation_items_logs 
            (id, quotation_item_id, old_status, new_status, note, changed_by)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [generateId("QLOG"), item_id, old.status, status, note, technician_id]
+          [generateId("QLOG"), item_id, old.status, status, reason, technician_id]
         );
       }
 

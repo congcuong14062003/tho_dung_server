@@ -2,17 +2,20 @@ import express from "express";
 import { CategoryController } from "../controllers/category.controller.js";
 import { verifyToken, authorizeRoles } from "../middlewares/auth.middleware.js";
 import { TechnicianController } from "../controllers/technician.controller.js";
+import { checkUserStatus } from "../middlewares/checkUserStatus.js";
 
 const router = express.Router();
 router.post(
   "/admin/get-all-technicians",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   TechnicianController.getAllTechnicians
 );
 router.post(
   "/admin/get-pending-technicians",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   TechnicianController.getPendingTechnicians
 );
@@ -20,6 +23,7 @@ router.post(
 router.post(
   "/request",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("customer"),
   TechnicianController.applyToBecomeTechnician
 );
@@ -27,12 +31,14 @@ router.post(
 router.post(
   "/admin/approve",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   TechnicianController.approveTechnician
 );
 router.post(
   "/admin/reject",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   TechnicianController.rejectTechnician
 );
@@ -41,6 +47,7 @@ router.post(
 router.post(
   "/admin/block",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   TechnicianController.blockTechnician
 );
@@ -49,6 +56,7 @@ router.post(
 router.post(
   "/admin/unblock",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   TechnicianController.unblockTechnician
 );

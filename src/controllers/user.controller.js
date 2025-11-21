@@ -72,4 +72,74 @@ export const UserController = {
       });
     }
   },
+
+  async getAllCustomer(req, res) {
+    try {
+      const { keySearch = "", status = "" } = req.body;
+
+      const users = await UserModel.getAllCustomer({ keySearch, status });
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Lấy danh sách user thành công",
+        data: users,
+      });
+    } catch (error) {
+      console.error("Lỗi getAllUsers:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi lấy danh sách user",
+      });
+    }
+  },
+
+  async updateStatus(req, res) {
+    try {
+      const { userId, status } = req.body;
+
+      if (!userId || !status) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu tham số id hoặc status",
+        });
+      }
+
+      const user = await UserModel.getUserById(userId);
+
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // cập nhật status user
+      const result = await UserModel.updateStatus(userId, status);
+
+      if (!result) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy user cần cập nhật",
+        });
+      }
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Cập nhật trạng thái user thành công",
+      });
+    } catch (error) {
+      console.error("Lỗi updateStatus:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi cập nhật trạng thái",
+      });
+    }
+  },
 };

@@ -4,6 +4,7 @@ import { convertHeicToJpg, upload } from "../middlewares/upload.js";
 import { authorizeRoles, verifyToken } from "../middlewares/auth.middleware.js";
 import { PaymentController } from "../controllers/payment.controller.js";
 import { canViewRequestDetail } from "../middlewares/request.middleware.js";
+import { checkUserStatus } from "../middlewares/checkUserStatus.js";
 
 const router = express.Router();
 
@@ -11,6 +12,7 @@ const router = express.Router();
 router.post(
   "/",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("customer", "technician"),
   upload.array("images", 5), // ✅ đổi từ icon sang images (tối đa 5 ảnh)
   // convertHeicToJpg, // ✅ thêm bước chuyển HEIC sang JPG
@@ -21,6 +23,7 @@ router.post(
 router.post(
   "/cancel",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("customer", "technician"),
   RequestController.cancelRequest
 );
@@ -29,6 +32,7 @@ router.post(
 router.post(
   "/get-all-request",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   RequestController.getAll
 );
@@ -36,6 +40,7 @@ router.post(
 router.post(
   "/get-requests-by-user",
   verifyToken,
+  checkUserStatus,
   RequestController.getRequestsByUser
 );
 
@@ -43,6 +48,7 @@ router.post(
 router.post(
   "/get-requests-by-technician",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("technician"),
   RequestController.getRequestsByTechnician
 );
@@ -51,6 +57,7 @@ router.post(
 router.get(
   "/:id/detail-request",
   verifyToken,
+  checkUserStatus,
   canViewRequestDetail,
   RequestController.getRequestDetail
 );
@@ -59,6 +66,7 @@ router.get(
 router.post(
   "/assign",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("admin"),
   RequestController.assignRequest
 );
@@ -67,6 +75,7 @@ router.post(
 router.post(
   "/technician-response",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("technician"),
   RequestController.technicianResponse
 );
@@ -75,6 +84,7 @@ router.post(
 router.post(
   "/survey/upload",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("technician"),
   upload.array("images", 5),
   RequestController.uploadSurveyImages
@@ -84,6 +94,7 @@ router.post(
 router.post(
   "/quotation/send",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("technician"),
   RequestController.createQuotation
 );
@@ -92,6 +103,7 @@ router.post(
 router.post(
   "/quotation/response",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("customer", "technician"),
   RequestController.quotationResponse
 );
@@ -100,6 +112,7 @@ router.post(
 router.post(
   "/quotation/update-progress",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("customer", "technician"),
   RequestController.updateItemProgress
 );
@@ -108,9 +121,9 @@ router.post(
 router.post(
   "/set-completed",
   verifyToken,
+  checkUserStatus,
   authorizeRoles("customer"),
   RequestController.setCompleted
 );
-
 
 export default router;
