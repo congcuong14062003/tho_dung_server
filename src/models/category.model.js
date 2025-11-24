@@ -2,83 +2,98 @@ import db from "../config/db.js";
 import { generateId } from "../utils/crypto.js";
 
 export const CategoryModel = {
-  // Lấy tất cả danh mục cha
-  async getAll() {
+  // ===============================
+  // 🔹 Lấy tất cả danh mục active (cho khách hàng)
+  // ===============================
+  async getActiveCategories() {
     const [rows] = await db.query(
-      "SELECT * FROM service_categories WHERE status = 1 ORDER BY `order` ASC"
+      `SELECT id, name, description, color, icon 
+       FROM service_categories 
+       WHERE status = 'active'
+       ORDER BY name ASC`
     );
     return rows;
   },
 
-  // Lấy có phân trang
-  async getPaginated({ keySearch = "", limit, offset }) {
-    const searchQuery = `%${keySearch}%`;
+  // ===============================
+  // 🔹 Lấy danh mục phân trang (Admin)
+  // ===============================
+  async getPaginated({ keySearch = "", status = "", limit, offset }) {
+    const search = `%${keySearch}%`;
+
+    let where = "(id LIKE ? OR name LIKE ? OR description LIKE ?)";
+    if (status && status.trim() !== "") {
+      where += " AND status = ?";
+    }
+
+    const params = [search, search, search];
+    if (status && status.trim() !== "") params.push(status);
+    params.push(limit, offset);
 
     const [data] = await db.query(
       `SELECT id, name, description, icon, status, color
-     FROM service_categories
-     WHERE status = 1 
-       AND (
-         id LIKE ? 
-         OR name LIKE ? 
-         OR description LIKE ?
-       )
-     ORDER BY \`order\` ASC
-     LIMIT ? OFFSET ?`,
-      [searchQuery, searchQuery, searchQuery, limit, offset]
+       FROM service_categories
+       WHERE ${where}
+       ORDER BY \`order\` ASC
+       LIMIT ? OFFSET ?`,
+      params
     );
 
+    const countParams = [search, search, search];
+    if (status && status.trim() !== "") countParams.push(status);
+
     const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total 
-     FROM service_categories 
-     WHERE status = 1 
-       AND (
-         id LIKE ? 
-         OR name LIKE ? 
-         OR description LIKE ?
-       )`,
-      [searchQuery, searchQuery, searchQuery]
+      `SELECT COUNT(*) AS total
+       FROM service_categories
+       WHERE ${where}`,
+      countParams
     );
 
     return { data, total };
   },
-  // Lấy danh mục theo ID
+
+  // ===============================
+  // 🔹 Lấy danh mục theo ID
+  // ===============================
   async getById(id) {
     const [rows] = await db.query(
-      "SELECT * FROM service_categories WHERE id = ? AND status = 1",
+      "SELECT * FROM service_categories WHERE id = ?",
       [id]
     );
     return rows[0];
   },
 
-  // Kiểm tra trùng tên (trừ chính nó)
+  // ===============================
+  // 🔹 Kiểm tra trùng tên
+  // ===============================
   async checkNameExists(name, excludeId = null) {
     let query =
-      "SELECT id FROM service_categories WHERE name = ? AND status = 1";
+      "SELECT id FROM service_categories WHERE name = ? AND status != 0";
     const params = [name];
-
     if (excludeId) {
       query += " AND id != ?";
       params.push(excludeId);
     }
-
     const [rows] = await db.query(query, params);
     return rows.length > 0;
   },
 
-  // ✅ Thêm mới (admin)
-  async create({ name, description, color, icon }) {
-    const id = generateId("CAT_"); // sinh ID chuỗi dạng CAT_xxxxxxxx
-    const [result] = await db.query(
-      "INSERT INTO service_categories (id, name, description, color, icon) VALUES (?, ?, ?, ?, ?)",
-      [id, name, description || "", color, icon || null]
+  // ===============================
+  // 🔹 Tạo danh mục mới
+  // ===============================
+  async create({ name, description, color, icon, status }) {
+    const id = generateId("CAT_");
+    await db.query(
+      "INSERT INTO service_categories (id, name, description, color, icon, status) VALUES (?, ?, ?, ?, ?, ?)",
+      [id, name, description || "", color, icon || null, status || "active"]
     );
-    return result.insertId;
+    return id;
   },
 
-  // ✅ Cập nhật danh mục
-  async update(id, { name, description, color, icon }) {
-    // Cập nhật động (bỏ qua field null)
+  // ===============================
+  // 🔹 Cập nhật danh mục (Admin)
+  // ===============================
+  async update(id, { name, description, color, icon, status }) {
     const fields = [];
     const values = [];
 
@@ -98,6 +113,10 @@ export const CategoryModel = {
       fields.push("color = ?");
       values.push(color);
     }
+    if (status !== undefined) {
+      fields.push("status = ?");
+      values.push(status);
+    }
 
     if (fields.length === 0) return 0;
 
@@ -110,21 +129,14 @@ export const CategoryModel = {
     return result.affectedRows;
   },
 
-  // Xóa danh mục (chuyển status = 0)
+  // ===============================
+  // 🔹 Xóa danh mục (Admin) - chuyển status = 0
+  // ===============================
   async delete(id) {
     const [result] = await db.query(
       "UPDATE service_categories SET status = 0 WHERE id = ?",
       [id]
     );
     return result.affectedRows;
-  },
-
-  // Lấy danh sách service theo category_id
-  async getServicesByCategory(categoryId) {
-    const [rows] = await db.query(
-      "SELECT * FROM services WHERE category_id = ? ORDER BY id ASC",
-      [categoryId]
-    );
-    return rows;
   },
 };

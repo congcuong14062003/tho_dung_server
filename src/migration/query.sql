@@ -37,13 +37,16 @@ CREATE TABLE service_categories (
   name VARCHAR(100) NOT NULL,
   description TEXT,
   icon VARCHAR(255),
-  status TINYINT(1) DEFAULT 1,
+  status ENUM('active', 'inactive') DEFAULT 'active',
   color VARCHAR(10) DEFAULT '#4A90E2',
   `order` INT DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP 
+      ON UPDATE CURRENT_TIMESTAMP
 );
 
+-- ALTER TABLE service_categories 
+-- MODIFY COLUMN status ENUM('active', 'inactive') DEFAULT 'active';
 
 
 
@@ -95,11 +98,12 @@ CREATE TABLE services (
   description TEXT,
   base_price VARCHAR(20) DEFAULT '0',
   unit VARCHAR(50),
-  status TINYINT(1) DEFAULT 1,
+  status ENUM('active', 'inactive') DEFAULT 'active',
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   FOREIGN KEY (category_id) REFERENCES service_categories(id)
 );
+
 
 -- ==========================
 -- REQUESTS

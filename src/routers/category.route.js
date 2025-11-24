@@ -6,37 +6,48 @@ import { checkUserStatus } from "../middlewares/checkUserStatus.js";
 
 const router = express.Router();
 
-// Public: lấy danh sách danh mục
+// ===============================
+// 🔹 Lấy danh sách danh mục (Admin - phân trang)
+// ===============================
 router.post(
-  "/list-category",
+  "/admin/list-category",
   verifyToken,
   checkUserStatus,
+  authorizeRoles("admin"),
   CategoryController.getListPaginated
 );
 
-// Chỉ admin được phép CRUD
+// ===============================
+// 🔹 Lấy danh mục active cho khách hàng
+// ===============================
 router.post(
-  "/create-category",
+  "/list-category",
+  verifyToken,
+  CategoryController.getListForCustomer
+);
+
+// ===============================
+// 🔹 CRUD admin
+// ===============================
+
+// Tạo danh mục mới
+router.post(
+  "/admin/create-category",
   verifyToken,
   checkUserStatus,
   authorizeRoles("admin"),
   upload.single("icon"),
   CategoryController.create
 );
+
+// Cập nhật danh mục (có thể thay đổi trạng thái)
 router.post(
-  "/update-category/:id",
+  "/admin/update-category/:id",
   verifyToken,
   checkUserStatus,
   authorizeRoles("admin"),
   upload.single("icon"),
   CategoryController.update
-);
-router.post(
-  "/delete-category/:id",
-  verifyToken,
-  checkUserStatus,
-  authorizeRoles("admin"),
-  CategoryController.delete
 );
 
 export default router;

@@ -15,7 +15,6 @@ export const UserModel = {
     phone,
     idcard,
     password,
-    role,
     verified,
     otp_code,
     otp_expiry,
@@ -24,15 +23,14 @@ export const UserModel = {
     const userId = generateId("USR_");
 
     await db.query(
-      `INSERT INTO users (id, full_name, id_card, phone, password_hash, role, verified, otp_code, otp_expiry)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO users (id, full_name, id_card, phone, password_hash, verified, otp_code, otp_expiry)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         userId,
         fullname,
         idcard,
         phone,
         password,
-        role,
         verified,
         otp_code,
         otp_expiry,

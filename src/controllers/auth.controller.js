@@ -14,7 +14,7 @@ export const AuthController = {
     try {
       const { fullname, phone, idcard, password, role } = req.body;
 
-      if (!fullname || !phone || !idcard || !password || !role) {
+      if (!fullname || !phone || !idcard || !password) {
         return baseResponse(res, {
           code: 400,
           status: false,
@@ -22,13 +22,13 @@ export const AuthController = {
         });
       }
 
-      if (!AuthController.validateRole(role)) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Role không hợp lệ",
-        });
-      }
+      // if (!AuthController.validateRole(role)) {
+      //   return baseResponse(res, {
+      //     code: 400,
+      //     status: false,
+      //     message: "Role không hợp lệ",
+      //   });
+      // }
 
       const existing = await UserModel.findByPhone(phone);
       if (existing) {
@@ -65,7 +65,6 @@ export const AuthController = {
         phone,
         idcard,
         password: hashedPassword,
-        role,
         verified: false,
         otp_code: otp,
         otp_expiry: otpExpiry,

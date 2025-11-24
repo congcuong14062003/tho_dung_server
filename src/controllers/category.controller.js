@@ -2,43 +2,44 @@ import { CategoryModel } from "../models/category.model.js";
 import { baseResponse } from "../utils/response.helper.js";
 import dotenv from "dotenv";
 dotenv.config();
+
 export const CategoryController = {
   // ===============================
-  // 🔹 Lấy tất cả danh mục
+  // 🔹 Lấy danh sách active cho khách hàng
   // ===============================
-  async getAll(req, res) {
+  async getListForCustomer(req, res) {
     try {
-      const categories = await CategoryModel.getAll();
+      const data = await CategoryModel.getActiveCategories();
       return baseResponse(res, {
         code: 200,
-        data: categories,
+        status: true,
         message: "Lấy danh sách danh mục thành công",
+        data: data,
       });
     } catch (error) {
-      console.error("GetAllCategories:", error);
+      console.error("GetActiveCategories:", error);
       return baseResponse(res, {
         code: 500,
         status: false,
-        message: "Lỗi server khi lấy danh mục",
+        message: "Lỗi server khi lấy danh sách danh mục",
       });
     }
   },
+
   // ===============================
-  // 🔹 Lấy danh mục có phân trang
+  // 🔹 Lấy danh mục có phân trang (Admin)
   // ===============================
   async getListPaginated(req, res) {
     try {
-      let { page = 1, size = 10, keySearch = "" } = req.body;
-      page = Number(page);
-      size = Number(size);
+      let { page = 1, size = 10, keySearch = "", status = "" } = req.body;
 
-      if (page < 1) page = 1;
-      if (size < 1) size = 10;
-
+      page = Math.max(Number(page), 1);
+      size = Math.max(Number(size), 1);
       const offset = (page - 1) * size;
 
       const { data, total } = await CategoryModel.getPaginated({
         keySearch,
+        status,
         limit: size,
         offset,
       });
@@ -50,9 +51,9 @@ export const CategoryController = {
         data: {
           page,
           size,
-          total,
+          totalRecord: total,
           totalPages: Math.ceil(total / size),
-          data: data,
+          data,
         },
       });
     } catch (error) {
@@ -64,40 +65,13 @@ export const CategoryController = {
       });
     }
   },
-  // ===============================
-  // 🔹 Lấy danh mục theo ID
-  // ===============================
-  async getById(req, res) {
-    try {
-      const category = await CategoryModel.getById(req.params.id);
-      if (!category)
-        return baseResponse(res, {
-          code: 404,
-          status: false,
-          message: "Không tìm thấy danh mục",
-        });
-
-      return baseResponse(res, {
-        code: 200,
-        data: category,
-        message: "Lấy thông tin danh mục thành công",
-      });
-    } catch (error) {
-      console.error("GetByIdCategory:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi lấy chi tiết danh mục",
-      });
-    }
-  },
 
   // ===============================
-  // 🔹 Tạo danh mục mới
+  // 🔹 Tạo danh mục mới (Admin)
   // ===============================
   async create(req, res) {
     try {
-      const { name, description, color } = req.body;
+      const { name, description, color, status } = req.body;
       const icon = req.file
         ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`
         : null;
@@ -109,16 +83,18 @@ export const CategoryController = {
           message: "Thiếu tên danh mục",
         });
       }
-      // 🔍 Kiểm tra danh mục đã tồn tại chưa
+
+      // Kiểm tra trùng tên
       const existed = await CategoryModel.checkNameExists(name);
       if (existed) {
         return baseResponse(res, {
-          code: 409, // conflict
+          code: 409,
           status: false,
           message: "Tên danh mục đã tồn tại!",
         });
       }
-      const id = await CategoryModel.create({ name, description, color, icon });
+
+      const id = await CategoryModel.create({ name, description, color, icon, status });
 
       return baseResponse(res, {
         code: 200,
@@ -136,17 +112,17 @@ export const CategoryController = {
   },
 
   // ===============================
-  // 🔹 Cập nhật danh mục
+  // 🔹 Cập nhật danh mục (Admin)
   // ===============================
   async update(req, res) {
     try {
       const id = req.params.id;
-      const { name, description, color } = req.body;
+      const { name, description, color, status } = req.body;
+
       const icon = req.file
         ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`
         : null;
 
-      // Kiểm tra danh mục hiện tại
       const current = await CategoryModel.getById(id);
       if (!current) {
         return baseResponse(res, {
@@ -156,7 +132,6 @@ export const CategoryController = {
         });
       }
 
-      // ✅ Kiểm tra trùng tên (loại trừ chính nó)
       if (name && (await CategoryModel.checkNameExists(name, id))) {
         return baseResponse(res, {
           code: 409,
@@ -165,11 +140,11 @@ export const CategoryController = {
         });
       }
 
-      // ✅ Cập nhật
       const affected = await CategoryModel.update(id, {
         name,
         description,
         color,
+        status,
         icon: icon || current.icon,
       });
 
@@ -197,14 +172,13 @@ export const CategoryController = {
   },
 
   // ===============================
-  // 🔹 Xóa danh mục
+  // 🔹 Xóa danh mục (Admin) - chuyển trạng thái = 0
   // ===============================
   async delete(req, res) {
     try {
       const id = req.params.id;
-
-      // Kiểm tra danh mục có tồn tại không
       const category = await CategoryModel.getById(id);
+
       if (!category) {
         return baseResponse(res, {
           code: 404,
@@ -213,7 +187,6 @@ export const CategoryController = {
         });
       }
 
-      // Nếu đã bị ẩn rồi thì không cần xóa lại
       if (category.status === 0) {
         return baseResponse(res, {
           code: 400,
@@ -241,43 +214,6 @@ export const CategoryController = {
         code: 500,
         status: false,
         message: "Lỗi server khi xóa danh mục",
-      });
-    }
-  },
-  // ===============================
-  // 🔹 Lấy tất cả service của 1 danh mục
-  // ===============================
-  async getServicesByCategory(req, res) {
-    try {
-      const categoryId = req.params.id;
-
-      // Kiểm tra danh mục có tồn tại không
-      const category = await CategoryModel.getById(categoryId);
-      if (!category) {
-        return baseResponse(res, {
-          code: 404,
-          status: false,
-          message: "Không tìm thấy danh mục",
-        });
-      }
-
-      // Lấy danh sách service con
-      const services = await CategoryModel.getServicesByCategory(categoryId);
-
-      return baseResponse(res, {
-        code: 200,
-        message: "Lấy danh sách dịch vụ thành công",
-        data: {
-          category,
-          services,
-        },
-      });
-    } catch (error) {
-      console.error("GetServicesByCategory:", error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi lấy dịch vụ theo danh mục",
       });
     }
   },
