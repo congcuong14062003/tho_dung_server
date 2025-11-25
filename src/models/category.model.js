@@ -10,7 +10,7 @@ export const CategoryModel = {
       `SELECT id, name, description, color, icon 
        FROM service_categories 
        WHERE status = 'active'
-       ORDER BY name ASC`
+       ORDER BY \`order\` ASC`
     );
     return rows;
   },
@@ -22,12 +22,12 @@ export const CategoryModel = {
     const search = `%${keySearch}%`;
 
     let where = "(id LIKE ? OR name LIKE ? OR description LIKE ?)";
-    if (status && status.trim() !== "") {
+    if (status && status.trim() !== "all") {
       where += " AND status = ?";
     }
 
     const params = [search, search, search];
-    if (status && status.trim() !== "") params.push(status);
+    if (status && status.trim() !== "all") params.push(status);
     params.push(limit, offset);
 
     const [data] = await db.query(
@@ -40,7 +40,7 @@ export const CategoryModel = {
     );
 
     const countParams = [search, search, search];
-    if (status && status.trim() !== "") countParams.push(status);
+    if (status && status.trim() !== "all") countParams.push(status);
 
     const [[{ total }]] = await db.query(
       `SELECT COUNT(*) AS total
@@ -58,6 +58,17 @@ export const CategoryModel = {
   async getById(id) {
     const [rows] = await db.query(
       "SELECT * FROM service_categories WHERE id = ?",
+      [id]
+    );
+    return rows[0];
+  },
+
+  // ===============================
+  // 🔹 Lấy danh mục hoạt động theo ID
+  // ===============================
+  async getByIdActive(id) {
+    const [rows] = await db.query(
+      "SELECT * FROM service_categories WHERE id = ? and status = 'active'",
       [id]
     );
     return rows[0];

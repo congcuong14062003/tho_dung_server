@@ -117,7 +117,7 @@ export const RequestController = {
       return baseResponse(res, {
         code: 200,
         status: true,
-        data: { total, ...handlePagination(req), data },
+        data: { totalRecord: total, data },
       });
     } catch (error) {
       console.error("getAll:", error);

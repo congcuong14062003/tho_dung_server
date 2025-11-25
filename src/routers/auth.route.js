@@ -5,7 +5,6 @@ const router = express.Router();
 
 router.post("/register", AuthController.register);
 router.post("/verify-otp", AuthController.verifyOTP);
-router.post("/update-role", AuthController.updateRole);
 router.post("/login", AuthController.loginClient);
 // ========== ADMIN ==========
 router.post("/admin/login", AuthController.loginAdmin); // ← Đăng nhập riêng cho admin

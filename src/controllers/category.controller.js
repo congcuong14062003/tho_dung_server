@@ -14,7 +14,9 @@ export const CategoryController = {
         code: 200,
         status: true,
         message: "Lấy danh sách danh mục thành công",
-        data: data,
+        data: {
+          data,
+        },
       });
     } catch (error) {
       console.error("GetActiveCategories:", error);
@@ -31,7 +33,7 @@ export const CategoryController = {
   // ===============================
   async getListPaginated(req, res) {
     try {
-      let { page = 1, size = 10, keySearch = "", status = "" } = req.body;
+      let { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
 
       page = Math.max(Number(page), 1);
       size = Math.max(Number(size), 1);
@@ -94,7 +96,13 @@ export const CategoryController = {
         });
       }
 
-      const id = await CategoryModel.create({ name, description, color, icon, status });
+      const id = await CategoryModel.create({
+        name,
+        description,
+        color,
+        icon,
+        status,
+      });
 
       return baseResponse(res, {
         code: 200,
@@ -116,8 +124,7 @@ export const CategoryController = {
   // ===============================
   async update(req, res) {
     try {
-      const id = req.params.id;
-      const { name, description, color, status } = req.body;
+      const { id, name, description, color, status } = req.body;
 
       const icon = req.file
         ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`

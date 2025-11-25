@@ -5,7 +5,8 @@ import sevice from "./service.router.js";
 import tech from "./technician.route.js";
 import request from "./request.routes.js";
 import upload from "./media.route.js";
-import payment from './payment.route.js'
+import payment from './payment.route.js';
+import test from "./test.route.js"; // ⭐ import router test
 export default function RouterMain(app) {
   app.use("/auth", auth);
   app.use("/users", user)
@@ -15,5 +16,8 @@ export default function RouterMain(app) {
   app.use("/requests", request);
   app.use("/upload", upload);
   app.use("/payments", payment)
+
+  
+  app.use("/test", test); // ⭐ router test
   return app;
 }

@@ -190,63 +190,75 @@ export const TechnicianModel = {
     );
   },
 
-  // Lấy danh sách chờ duyệt (dùng cho PendingList)
   // Lấy danh sách yêu cầu (tất cả status)
-  async getPendingRequests({ page = 1, size = 10, keySearch = "" }) {
+  async getPendingRequests({
+    page = 1,
+    size = 10,
+    keySearch = "",
+    status = "all",
+  }) {
     const offset = (page - 1) * size;
     const search = `%${keySearch}%`;
 
-    // === LẤY DATA ===
-    const [rows] = await db.query(
-      `SELECT 
-        tr.id AS request_id,
-        tr.user_id,
-        u.full_name,
-        u.phone,
-        u.avatar_link,
-        tr.skill_category_id,
-        sc.name AS skill_category_name,
-        sc.color AS skill_category_color,
-        tr.experience_years,
-        tr.working_area,
-        tr.description,
-        tr.certifications,
-        tr.status,
-        tr.rejected_reason,
-        tr.created_at
-      FROM technician_requests tr
-      JOIN users u ON tr.user_id = u.id
-      LEFT JOIN service_categories sc ON tr.skill_category_id = sc.id
-      WHERE 
-        (
-             tr.id LIKE ?
-          OR u.full_name LIKE ?
-          OR u.phone LIKE ?
-          OR tr.working_area LIKE ?
-          OR tr.description LIKE ?
-        )
-      ORDER BY tr.created_at DESC
-      LIMIT ? OFFSET ?`,
-      [search, search, search, search, search, size, offset]
-    );
+    let where = `
+    (
+         tr.id LIKE ?
+      OR u.full_name LIKE ?
+      OR u.phone LIKE ?
+      OR tr.working_area LIKE ?
+      OR tr.description LIKE ?
+    )
+  `;
 
-    // === ĐẾM TỔNG ===
-    const [[{ total }]] = await db.query(
-      `SELECT COUNT(*) AS total
-      FROM technician_requests tr
-      JOIN users u ON tr.user_id = u.id
-      WHERE 
-        (
-             tr.id LIKE ?
-          OR u.full_name LIKE ?
-          OR u.phone LIKE ?
-          OR tr.working_area LIKE ?
-          OR tr.description LIKE ?
-        )`,
-      [search, search, search, search, search]
-    );
+    const params = [search, search, search, search, search];
 
-    return { data: rows, total: total || 0 };
+    // === FILTER STATUS ===
+    if (status && status !== "all") {
+      where += ` AND tr.status = ?`;
+      params.push(status);
+    }
+
+    // === Lấy data ===
+    const sqlData = `
+    SELECT 
+      tr.id AS request_id,
+      tr.user_id,
+      u.full_name,
+      u.phone,
+      u.avatar_link,
+      tr.skill_category_id,
+      sc.name AS skill_category_name,
+      sc.color AS skill_category_color,
+      tr.experience_years,
+      tr.working_area,
+      tr.description,
+      tr.certifications,
+      tr.status,
+      tr.rejected_reason,
+      tr.created_at
+    FROM technician_requests tr
+    JOIN users u ON tr.user_id = u.id
+    LEFT JOIN service_categories sc ON tr.skill_category_id = sc.id
+    WHERE ${where}
+    ORDER BY tr.created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+
+    const dataParams = [...params, size, offset];
+    const [rows] = await db.query(sqlData, dataParams);
+
+    // === Lấy tổng ===
+    const sqlCount = `
+    SELECT COUNT(*) AS total
+    FROM technician_requests tr
+    JOIN users u ON tr.user_id = u.id
+    WHERE ${where}
+  `;
+
+    const [countRows] = await db.query(sqlCount, params);
+    const total = countRows[0]?.total || 0;
+
+    return { data: rows, total };
   },
   /**
    * Lấy đầy đủ thông tin profile thợ theo user_id

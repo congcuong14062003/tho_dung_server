@@ -7,22 +7,23 @@ import { checkUserStatus } from "../middlewares/checkUserStatus.js";
 const router = express.Router();
 
 // ===============================
-// 🔹 Lấy danh sách service theo danh mục (Admin & Customer)
+// 🔹 Lấy danh sách service theo danh mục (Customer)
 // ===============================
 router.get(
   "/category/:categoryId",
   verifyToken,
   checkUserStatus,
-  ServiceController.getByCategory
+  ServiceController.getActiveByCategory
 );
 
 // ===============================
 // 🔹 Lấy danh sách service (Admin - phân trang, lọc theo category & keySearch)
 // ===============================
 router.post(
-  "/list-services",
+  "/admin/list-services",
   verifyToken,
   checkUserStatus,
+  authorizeRoles("admin"),
   ServiceController.getList
 );
 
@@ -32,7 +33,7 @@ router.post(
 
 // Tạo dịch vụ mới
 router.post(
-  "/",
+  "/admin/create-service",
   verifyToken,
   checkUserStatus,
   authorizeRoles("admin"),
@@ -41,20 +42,11 @@ router.post(
 
 // Cập nhật dịch vụ
 router.post(
-  "/:id",
+  "/admin/update-service",
   verifyToken,
   checkUserStatus,
   authorizeRoles("admin"),
   ServiceController.update
-);
-
-// Xóa dịch vụ (status = 0)
-router.delete(
-  "/:id",
-  verifyToken,
-  checkUserStatus,
-  authorizeRoles("admin"),
-  ServiceController.delete
 );
 
 export default router;

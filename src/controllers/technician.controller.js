@@ -26,7 +26,7 @@ export const TechnicianController = {
         message: "Lấy danh sách thợ thành công",
         data: {
           data,
-          total,
+          totalRecord: total,
           page: pageNum,
           size: pageSize,
           totalPages: Math.ceil(total / pageSize),
@@ -39,6 +39,36 @@ export const TechnicianController = {
         status: false,
         message: "Lỗi server khi lấy danh sách thợ",
       });
+    }
+  },
+  // Admin xem danh sách các yêu cầu muốn làm thợ
+  async getPendingTechnicians(req, res) {
+    try {
+      const { page = 1, size = 10, keySearch = "", status = "all" } = req.body;
+
+      // Ép kiểu số nguyên để tránh lỗi
+      const pageNum = parseInt(page, 10);
+      const pageSize = parseInt(size, 10);
+      const { data, total } = await TechnicianModel.getPendingRequests({
+        page: pageNum,
+        size: pageSize,
+        keySearch,
+        status,
+      });
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Lấy danh sách thợ thành công",
+        data: {
+          data,
+          totalRecord: total,
+          page: pageNum,
+          size: pageSize,
+          totalPages: Math.ceil(total / pageSize),
+        },
+      });
+    } catch (error) {
+      return baseResponse(res, { code: 500, message: error.message });
     }
   },
 
@@ -192,20 +222,6 @@ export const TechnicianController = {
         status: false,
         message: "Lỗi từ chối",
       });
-    }
-  },
-  // Admin xem danh sách các yêu cầu muốn làm thợ
-  async getPendingTechnicians(req, res) {
-    try {
-      const { page = 1, size = 10, keySearch = "" } = req.body;
-      const result = await TechnicianModel.getPendingRequests({
-        page,
-        size,
-        keySearch,
-      });
-      return baseResponse(res, { code: 200, status: true, data: result });
-    } catch (error) {
-      return baseResponse(res, { code: 500, message: error.message });
     }
   },
 

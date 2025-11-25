@@ -69,33 +69,61 @@ export const UserModel = {
   },
 
   // danh sách khách hàng
-  async getAllCustomer({ keySearch, status }) {
-    let sql = `
-    SELECT id, full_name, phone, id_card, avatar_link, status
+  // danh sách khách hàng có phân trang
+  async getAllCustomer({ keySearch, status, page, size }) {
+    const limit = Number(size) || 10;
+    const offset = (Number(page) - 1) * limit;
+
+    let baseSql = `
     FROM users
-    WHERE 1 = 1 and role = "customer"
+    WHERE 1 = 1 
+      AND role = "customer"
   `;
 
     const params = [];
+    const paramsCount = [];
 
-    // 🔍 Search theo tên / sdt / email
+    // --------------------- SEARCH ---------------------
     if (keySearch) {
-      sql += ` AND (full_name LIKE ? OR phone LIKE ? OR id LIKE ?)`;
+      baseSql += ` AND (full_name LIKE ? OR phone LIKE ? OR id LIKE ?)`;
       params.push(`%${keySearch}%`, `%${keySearch}%`, `%${keySearch}%`);
+      paramsCount.push(`%${keySearch}%`, `%${keySearch}%`, `%${keySearch}%`);
     }
 
-    // 🔎 Filter trạng thái
-    if (status) {
-      sql += ` AND status = ?`;
+    // --------------------- STATUS FILTER ---------------------
+    if (status && status !== "all") {
+      baseSql += ` AND status = ?`;
       params.push(status);
+      paramsCount.push(status);
     }
 
-    sql += ` ORDER BY created_at DESC`;
+    // --------------------- TOTAL RECORD ---------------------
+    const [countRows] = await db.query(
+      `SELECT COUNT(*) AS total ${baseSql}`,
+      paramsCount
+    );
+    const totalRecord = countRows[0]?.total || 0;
+
+    // --------------------- DATA QUERY ---------------------
+    const sql = `
+    SELECT id, full_name, phone, id_card, avatar_link, status
+    ${baseSql}
+    ORDER BY created_at DESC
+    LIMIT ? OFFSET ?
+  `;
+
+    params.push(limit, offset);
 
     const [rows] = await db.query(sql, params);
-    return rows;
-  },
 
+    return {
+      page,
+      size,
+      totalRecord,
+      totalPages: Math.ceil(totalRecord / limit),
+      data: rows,
+    };
+  },
   // cập nhật avatar
   async updateAvatar(userId, avatarPath) {
     const [result] = await db.query(

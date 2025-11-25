@@ -75,15 +75,22 @@ export const UserController = {
 
   async getAllCustomer(req, res) {
     try {
-      const { keySearch = "", status = "" } = req.body;
+      const { keySearch = "", status = "all", page = 1, size = 10 } = req.body;
 
-      const users = await UserModel.getAllCustomer({ keySearch, status });
+      const result = await UserModel.getAllCustomer({
+        keySearch,
+        status,
+        page,
+        size,
+      });
+
+      console.log("result: ", result);
 
       return baseResponse(res, {
         code: 200,
         status: true,
         message: "Lấy danh sách user thành công",
-        data: users,
+        data: result, // page, size, totalRecord, totalPages, data
       });
     } catch (error) {
       console.error("Lỗi getAllUsers:", error);
@@ -94,7 +101,6 @@ export const UserController = {
       });
     }
   },
-
   async updateStatus(req, res) {
     try {
       const { userId, status } = req.body;

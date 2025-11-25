@@ -4,12 +4,9 @@ import { UserModel } from "../models/user.model.js";
 import { sendOTP, generateOTP } from "../utils/otp.js";
 import { baseResponse } from "../utils/response.helper.js";
 import { TechnicianModel } from "../models/technician.model.js";
+import { DeviceModel } from "../models/device.model.js";
 
 export const AuthController = {
-  validateRole(role) {
-    return ["customer"].includes(role);
-  },
-
   async register(req, res) {
     try {
       const { fullname, phone, idcard, password, role } = req.body;
@@ -21,15 +18,6 @@ export const AuthController = {
           message: "Thiếu thông tin đăng ký",
         });
       }
-
-      // if (!AuthController.validateRole(role)) {
-      //   return baseResponse(res, {
-      //     code: 400,
-      //     status: false,
-      //     message: "Role không hợp lệ",
-      //   });
-      // }
-
       const existing = await UserModel.findByPhone(phone);
       if (existing) {
         // Nếu tài khoản chưa verify → gửi lại OTP mới
@@ -214,7 +202,7 @@ export const AuthController = {
   // =========================================
   async loginClient(req, res) {
     try {
-      const { phone, password } = req.body;
+      const { phone, password, device_id, fcm_token } = req.body;
 
       if (!phone || !password) {
         return baseResponse(res, {
@@ -273,6 +261,16 @@ export const AuthController = {
         role: user.role,
       });
 
+      // 🔥 LƯU FCM + DEVICE ID
+      if (device_id && fcm_token) {
+        await DeviceModel.saveDevice({
+          user_id: user.id,
+          device_id,
+          fcm_token,
+          platform: platform || "unknown",
+        });
+      }
+
       // Nếu là thợ → lấy thêm thông tin profile
       let workerInfor = null;
       if (user.role === "technician") {
@@ -310,7 +308,7 @@ export const AuthController = {
   // =========================================
   async loginAdmin(req, res) {
     try {
-      const { phone, password } = req.body;
+      const { phone, password, device_id, fcm_token } = req.body;
 
       if (!phone || !password) {
         return baseResponse(res, {
@@ -364,6 +362,14 @@ export const AuthController = {
         "1h"
       ); // Admin token hết hạn nhanh hơn (tùy chỉnh)
 
+      // 🔥 LƯU FCM + DEVICE ID
+      if (device_id && fcm_token) {
+        await DeviceModel.saveDevice({
+          user_id: user.id,
+          device_id,
+          fcm_token,
+        });
+      }
       return baseResponse(res, {
         code: 200,
         status: true,
@@ -440,73 +446,6 @@ export const AuthController = {
         code: 500,
         status: false,
         message: "Lỗi server khi tạo admin",
-      });
-    }
-  },
-
-  async updateRole(req, res) {
-    try {
-      const {
-        userId,
-        role,
-        skill_category_id,
-        experience_years,
-        description,
-        working_area,
-        certifications,
-      } = req.body;
-
-      if (!userId || !role) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Thiếu thông tin cập nhật vai trò",
-        });
-      }
-
-      if (!AuthController.validateRole(role)) {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Vai trò không hợp lệ (chỉ customer hoặc technician)",
-        });
-      }
-
-      const user = await UserModel.getById(userId);
-      if (!user) {
-        return baseResponse(res, {
-          code: 404,
-          status: false,
-          message: "Không tìm thấy người dùng",
-        });
-      }
-
-      // Cập nhật role
-      await UserModel.updateUser(userId, { role });
-
-      // Nếu là thợ thì lưu thông tin kỹ năng vào technician_profiles
-      if (role === "technician") {
-        await TechnicianModel.createOrUpdateProfile({
-          user_id: userId,
-          skill_category_id,
-          experience_years,
-          description,
-          working_area,
-          certifications,
-        });
-      }
-
-      return baseResponse(res, {
-        code: 200,
-        message: "Cập nhật vai trò thành công",
-        data: { userId, role },
-      });
-    } catch (error) {
-      console.error(error);
-      return baseResponse(res, {
-        code: 500,
-        status: false,
-        message: "Lỗi server khi cập nhật vai trò",
       });
     }
   },

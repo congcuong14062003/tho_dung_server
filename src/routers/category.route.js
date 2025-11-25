@@ -7,6 +7,15 @@ import { checkUserStatus } from "../middlewares/checkUserStatus.js";
 const router = express.Router();
 
 // ===============================
+// 🔹 Lấy danh mục active cho khách hàng
+// ===============================
+router.post(
+  "/list-category",
+  verifyToken,
+  CategoryController.getListForCustomer
+);
+
+// ===============================
 // 🔹 Lấy danh sách danh mục (Admin - phân trang)
 // ===============================
 router.post(
@@ -15,15 +24,6 @@ router.post(
   checkUserStatus,
   authorizeRoles("admin"),
   CategoryController.getListPaginated
-);
-
-// ===============================
-// 🔹 Lấy danh mục active cho khách hàng
-// ===============================
-router.post(
-  "/list-category",
-  verifyToken,
-  CategoryController.getListForCustomer
 );
 
 // ===============================
@@ -42,7 +42,7 @@ router.post(
 
 // Cập nhật danh mục (có thể thay đổi trạng thái)
 router.post(
-  "/admin/update-category/:id",
+  "/admin/update-category",
   verifyToken,
   checkUserStatus,
   authorizeRoles("admin"),
