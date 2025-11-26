@@ -68,7 +68,6 @@ export const UserModel = {
     ]);
   },
 
-  // danh sách khách hàng
   // danh sách khách hàng có phân trang
   async getAllCustomer({ keySearch, status, page, size }) {
     const limit = Number(size) || 10;
@@ -139,5 +138,10 @@ export const UserModel = {
       [status, id]
     );
     return result.affectedRows > 0;
+  },
+
+  async findAdmins() {
+    const [rows] = await db.query(`SELECT id FROM users WHERE role = 'admin'`);
+    return rows; // [{id:1}, {id:5}, ...]
   },
 };

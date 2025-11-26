@@ -1,5 +1,9 @@
 import { RequestModel } from "../models/request.model.js";
 import { baseResponse } from "../utils/response.helper.js";
+import {
+  sendNotification,
+  sendNotificationToAdmins,
+} from "../utils/sendNotification.js";
 // Helper chung cho phân trang (dùng lại ở mọi list)
 const handlePagination = (req) => {
   const page = parseInt(req.body.page) || 1;
@@ -60,6 +64,18 @@ export const RequestController = {
         requested_date,
         requested_time,
         images,
+      });
+
+      // ================================
+      // 🎉 Gửi thông báo cho admin CMS
+      // ================================
+      await sendNotificationToAdmins({
+        title: "Yêu cầu mới",
+        body: `Khách đã tạo yêu cầu: ${name_request}`,
+        data: {
+          request_id: String(requestId),
+          url: `/requests/${requestId}`, // 👈 thêm link vào đây
+        },
       });
 
       return baseResponse(res, {

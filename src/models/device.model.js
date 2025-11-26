@@ -2,13 +2,13 @@ import db from "../config/db.js";
 import { generateId } from "../utils/crypto.js";
 
 export const DeviceModel = {
-  async saveDevice({ user_id, device_id, fcm_token }) {
+  async saveDevice({ user_id, fcm_token }) {
     const id = generateId("DEV_");
 
     // Kiểm tra nếu device đã tồn tại
     const [exist] = await db.query(
-      `SELECT id FROM user_devices WHERE user_id = ? AND device_id = ?`,
-      [user_id, device_id]
+      `SELECT id FROM user_devices WHERE user_id = ? AND fcm_token = ?`,
+      [user_id, fcm_token]
     );
 
     if (exist.length > 0) {
@@ -27,12 +27,25 @@ export const DeviceModel = {
     // Nếu chưa có → tạo mới
     await db.query(
       `
-      INSERT INTO user_devices (id, user_id, device_id, fcm_token)
-      VALUES (?, ?, ?, ?)
+      INSERT INTO user_devices (id, user_id, fcm_token)
+      VALUES (?, ?, ?)
     `,
-      [id, user_id, device_id, fcm_token]
+      [id, user_id, fcm_token]
     );
 
     return id;
+  },
+  async deleteByToken(user_id, fcm_token) {
+    await db.query(
+      `DELETE FROM user_devices WHERE user_id = ? AND fcm_token = ?`,
+      [user_id, fcm_token]
+    );
+  },
+  async findByUserId(user_id) {
+    const [rows] = await db.query(
+      `SELECT id, user_id, fcm_token FROM user_devices WHERE user_id = ?`,
+      [user_id]
+    );
+    return rows; // trả về mảng token
   },
 };

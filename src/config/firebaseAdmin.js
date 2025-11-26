@@ -1,5 +1,6 @@
-const admin = require("firebase-admin");
-const serviceAccount = require("../../firebase-admin.json");
+import admin from "firebase-admin";
+
+import serviceAccount from "../../firebase-admin.json";
 
 if (!admin.apps.length) {
   admin.initializeApp({
@@ -7,4 +8,4 @@ if (!admin.apps.length) {
   });
 }
 
-module.exports = admin;
+export default admin;

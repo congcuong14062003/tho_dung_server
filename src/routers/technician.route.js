@@ -5,6 +5,15 @@ import { TechnicianController } from "../controllers/technician.controller.js";
 import { checkUserStatus } from "../middlewares/checkUserStatus.js";
 
 const router = express.Router();
+// User xem danh sách yêu cầu làm thợ của chính mình
+router.get(
+  "/my-requests",
+  verifyToken,
+  checkUserStatus,
+  authorizeRoles("customer"),
+  TechnicianController.getMyRequests
+);
+
 router.post(
   "/admin/get-all-technicians",
   verifyToken,
@@ -21,7 +30,7 @@ router.post(
 );
 // User nộp đơn
 router.post(
-  "/request",
+  "/request-technician",
   verifyToken,
   checkUserStatus,
   authorizeRoles("customer"),

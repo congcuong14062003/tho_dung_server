@@ -3,6 +3,27 @@ import { TechnicianModel } from "../models/technician.model.js";
 import { UserModel } from "../models/user.model.js";
 
 export const TechnicianController = {
+  async getMyRequests(req, res) {
+    try {
+      const userId = req.user.id;
+
+      const requests = await TechnicianModel.getRequestsByUserId(userId);
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Lấy danh sách yêu cầu làm thợ của bạn thành công",
+        data: requests,
+      });
+    } catch (error) {
+      console.error("Lỗi lấy yêu cầu của user:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi lấy danh sách yêu cầu",
+      });
+    }
+  },
   // Lấy danh sách thợ với phân trang và tìm kiếm
   async getAllTechnicians(req, res) {
     try {
@@ -77,12 +98,23 @@ export const TechnicianController = {
     try {
       const userId = req.user.id;
       const {
-        skill_category_id,
+        skill_category_ids,
         experience_years,
         working_area,
         description,
         certifications,
       } = req.body;
+
+      if (
+        !Array.isArray(skill_category_ids) ||
+        skill_category_ids.length === 0
+      ) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Cần chọn ít nhất 1 kỹ năng!",
+        });
+      }
 
       const user = await UserModel.getById(userId);
       if (!user) {
@@ -116,7 +148,7 @@ export const TechnicianController = {
       // Tạo request mới
       await TechnicianModel.createRequest({
         user_id: userId,
-        skill_category_id,
+        skill_category_ids,
         experience_years,
         working_area,
         description,
@@ -138,12 +170,14 @@ export const TechnicianController = {
     }
   },
 
-  // 2. Admin duyệt → mới đổi role + chuyển dữ liệu sang technician_profiles
+  // DUYỆT THỢ THEO DB MỚI (MULTI SKILLS)
   async approveTechnician(req, res) {
     try {
-      const { request_id } = req.body; // hoặc dùng user_id cũng được
+      const { request_id } = req.body;
+      const adminId = req.user.id;
 
       const request = await TechnicianModel.getRequestById(request_id);
+
       if (!request || request.status !== "pending") {
         return baseResponse(res, {
           code: 400,
@@ -153,18 +187,20 @@ export const TechnicianController = {
       }
 
       const userId = request.user_id;
-      const adminId = req.user.id;
 
-      // 1. Cập nhật user thành technician + active
+      // 1️⃣ LẤY MULTI SKILLS từ bảng technician_request_skills
+      const skills = await TechnicianModel.getRequestSkills(request_id);
+
+      // 2️⃣ CẬP NHẬT ROLE + ACTIVE
       await UserModel.updateUser(userId, {
         role: "technician",
         status: "active",
       });
 
-      // 2. Tạo profile chính thức
-      await TechnicianModel.createProfileFromRequest(request);
+      // 3️⃣ TẠO PROFILE + GÁN MULTI SKILLS
+      await TechnicianModel.createProfileFromRequest(request, skills);
 
-      // 3. Cập nhật trạng thái request
+      // 4️⃣ CẬP NHẬT REQUEST STATUS
       await TechnicianModel.updateRequestStatus(
         request_id,
         "approved",
@@ -174,7 +210,7 @@ export const TechnicianController = {
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: `Đã duyệt thành công thợ "${request.full_name}"`,
+        message: `Đã duyệt thợ "${request.full_name}" thành công`,
       });
     } catch (err) {
       console.error(err);
@@ -185,8 +221,8 @@ export const TechnicianController = {
       });
     }
   },
-
   // 3. Admin từ chối
+  // TỪ CHỐI YÊU CẦU LÀM THỢ
   async rejectTechnician(req, res) {
     try {
       const { request_id, reason } = req.body;
@@ -194,16 +230,15 @@ export const TechnicianController = {
 
       const request = await TechnicianModel.getRequestById(request_id);
 
-      console.log("request: ", request);
-
       if (!request || request.status !== "pending") {
         return baseResponse(res, {
           code: 400,
           status: false,
-          message: "Yêu cầu không hợp lệ",
+          message: "Không thể từ chối yêu cầu này",
         });
       }
 
+      // ❌ CHỈ cập nhật trạng thái request
       await TechnicianModel.updateRequestStatus(
         request_id,
         "rejected",
@@ -211,20 +246,22 @@ export const TechnicianController = {
         reason
       );
 
+      // ❌ User không được set về customer — vẫn giữ nguyên role customer hiện tại
+
       return baseResponse(res, {
         code: 200,
         status: true,
         message: "Đã từ chối yêu cầu làm thợ",
       });
     } catch (err) {
+      console.error(err);
       return baseResponse(res, {
         code: 500,
         status: false,
-        message: "Lỗi từ chối",
+        message: "Lỗi từ chối yêu cầu",
       });
     }
   },
-
   // ==================== KHÓA THỢ ====================
   async blockTechnician(req, res) {
     try {

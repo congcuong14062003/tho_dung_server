@@ -202,7 +202,7 @@ export const AuthController = {
   // =========================================
   async loginClient(req, res) {
     try {
-      const { phone, password, device_id, fcm_token } = req.body;
+      const { phone, password, fcm_token } = req.body;
 
       if (!phone || !password) {
         return baseResponse(res, {
@@ -262,12 +262,12 @@ export const AuthController = {
       });
 
       // 🔥 LƯU FCM + DEVICE ID
-      if (device_id && fcm_token) {
+      if (fcm_token) {
+        console.log("vào: ");
+        
         await DeviceModel.saveDevice({
           user_id: user.id,
-          device_id,
           fcm_token,
-          platform: platform || "unknown",
         });
       }
 
@@ -308,7 +308,7 @@ export const AuthController = {
   // =========================================
   async loginAdmin(req, res) {
     try {
-      const { phone, password, device_id, fcm_token } = req.body;
+      const { phone, password, fcm_token } = req.body;
 
       if (!phone || !password) {
         return baseResponse(res, {
@@ -363,10 +363,9 @@ export const AuthController = {
       ); // Admin token hết hạn nhanh hơn (tùy chỉnh)
 
       // 🔥 LƯU FCM + DEVICE ID
-      if (device_id && fcm_token) {
+      if (fcm_token) {
         await DeviceModel.saveDevice({
           user_id: user.id,
-          device_id,
           fcm_token,
         });
       }
@@ -446,6 +445,33 @@ export const AuthController = {
         code: 500,
         status: false,
         message: "Lỗi server khi tạo admin",
+      });
+    }
+  },
+
+  async logout(req, res) {
+    try {
+      const userId = req.user.id;
+      const { fcm_token } = req.body;
+
+      if (!fcm_token) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu fcm_token để logout",
+        });
+      }
+      await DeviceModel.deleteByToken(userId, fcm_token);
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Đăng xuất thành công",
+      });
+    } catch (error) {
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi đăng xuất",
       });
     }
   },

@@ -1,3 +1,4 @@
+import { TechnicianModel } from "../models/technician.model.js";
 import { UserModel } from "../models/user.model.js";
 import { baseResponse } from "../utils/response.helper.js";
 import dotenv from "dotenv";
@@ -17,11 +18,17 @@ export const UserController = {
         });
       }
 
+      let workerInfor = null;
+      if (user.role === "technician") {
+        workerInfor = await TechnicianModel.getProfileByUserId(userId);
+      } else {
+        workerInfor = null;
+      }
       return baseResponse(res, {
         code: 200,
         status: true,
         message: "Lấy thông tin người dùng thành công",
-        data: { userInfor: user, workerInfor: null },
+        data: { userInfor: user, workerInfor: workerInfor },
       });
     } catch (error) {
       console.error("Lỗi getProfile:", error);
