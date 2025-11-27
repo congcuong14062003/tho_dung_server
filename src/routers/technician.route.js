@@ -10,7 +10,7 @@ router.get(
   "/my-requests",
   verifyToken,
   checkUserStatus,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   TechnicianController.getMyRequests
 );
 

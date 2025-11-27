@@ -264,7 +264,7 @@ export const AuthController = {
       // 🔥 LƯU FCM + DEVICE ID
       if (fcm_token) {
         console.log("vào: ");
-        
+
         await DeviceModel.saveDevice({
           user_id: user.id,
           fcm_token,
@@ -359,7 +359,7 @@ export const AuthController = {
           phone: user.phone,
           role: "admin",
         },
-        "1h"
+        24 * 60 * 60
       ); // Admin token hết hạn nhanh hơn (tùy chỉnh)
 
       // 🔥 LƯU FCM + DEVICE ID

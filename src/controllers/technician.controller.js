@@ -93,7 +93,7 @@ export const TechnicianController = {
     }
   },
 
-  // 1. User nộp đơn làm thợ → chỉ tạo request, KHÔNG ĐỔI role/status
+  // User nộp đơn làm thợ hoặc chỉnh sửa thông tin thợ
   async applyToBecomeTechnician(req, res) {
     try {
       const userId = req.user.id;
@@ -125,15 +125,7 @@ export const TechnicianController = {
         });
       }
 
-      if (user.role === "technician") {
-        return baseResponse(res, {
-          code: 400,
-          status: false,
-          message: "Bạn đã là thợ rồi",
-        });
-      }
-
-      // Kiểm tra đã có đơn đang pending chưa
+      // Kiểm tra có request pending chưa
       const existingRequest = await TechnicianModel.getPendingRequestByUser(
         userId
       );
@@ -145,7 +137,10 @@ export const TechnicianController = {
         });
       }
 
-      // Tạo request mới
+      // 👉 Xác định type (new hoặc update)
+      const type = user.role === "technician" ? "update" : "new";
+
+      // Tạo request
       await TechnicianModel.createRequest({
         user_id: userId,
         skill_category_ids,
@@ -153,12 +148,16 @@ export const TechnicianController = {
         working_area,
         description,
         certifications,
+        type, // 👈 thêm type vào đây
       });
 
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: "Gửi yêu cầu làm thợ thành công! Đang chờ admin duyệt.",
+        message:
+          type === "update"
+            ? "Gửi yêu cầu chỉnh sửa thông tin thành công, vui lòng chờ admin duyệt."
+            : "Gửi yêu cầu làm thợ thành công, vui lòng chờ admin duyệt.",
       });
     } catch (err) {
       console.error(err);
@@ -169,7 +168,6 @@ export const TechnicianController = {
       });
     }
   },
-
   // DUYỆT THỢ THEO DB MỚI (MULTI SKILLS)
   async approveTechnician(req, res) {
     try {
@@ -186,21 +184,26 @@ export const TechnicianController = {
         });
       }
 
-      const userId = request.user_id;
-
-      // 1️⃣ LẤY MULTI SKILLS từ bảng technician_request_skills
+      const user = await UserModel.getById(request.user_id);
       const skills = await TechnicianModel.getRequestSkills(request_id);
 
-      // 2️⃣ CẬP NHẬT ROLE + ACTIVE
-      await UserModel.updateUser(userId, {
-        role: "technician",
-        status: "active",
-      });
+      if (user.role === "technician") {
+        // 🟢 TH 2 — USER ĐÃ LÀ THỢ → CHỈ UPDATE PROFILE
+        await TechnicianModel.updateProfileFromRequest(request, skills);
 
-      // 3️⃣ TẠO PROFILE + GÁN MULTI SKILLS
-      await TechnicianModel.createProfileFromRequest(request, skills);
+        // Chỉ cần đảm bảo user đang active
+        await UserModel.updateUser(user.id, { status: "active" });
+      } else {
+        // 🟢 TH 1 — USER LẦN ĐẦU → TẠO PROFILE
+        await UserModel.updateUser(user.id, {
+          role: "technician",
+          status: "active",
+        });
 
-      // 4️⃣ CẬP NHẬT REQUEST STATUS
+        await TechnicianModel.createProfileFromRequest(request, skills);
+      }
+
+      // Cập nhật trạng thái request
       await TechnicianModel.updateRequestStatus(
         request_id,
         "approved",
@@ -210,7 +213,7 @@ export const TechnicianController = {
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: `Đã duyệt thợ "${request.full_name}" thành công`,
+        message: "Duyệt thành công",
       });
     } catch (err) {
       console.error(err);
@@ -238,7 +241,17 @@ export const TechnicianController = {
         });
       }
 
-      // ❌ CHỈ cập nhật trạng thái request
+      // ⚠️ Kiểm tra user có tồn tại không
+      const user = await UserModel.getById(request.user_id);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "User không tồn tại",
+        });
+      }
+
+      // ❌ 1. Chỉ cập nhật trạng thái request
       await TechnicianModel.updateRequestStatus(
         request_id,
         "rejected",
@@ -246,12 +259,18 @@ export const TechnicianController = {
         reason
       );
 
-      // ❌ User không được set về customer — vẫn giữ nguyên role customer hiện tại
+      // ❌ 2. KHÔNG làm gì với technician_profiles
+      // ❌ 3. KHÔNG đổi role
+      // ❌ 4. KHÔNG xóa skill
+      // => Đúng nghiệp vụ: từ chối chỉ áp dụng cho request
 
       return baseResponse(res, {
         code: 200,
         status: true,
-        message: "Đã từ chối yêu cầu làm thợ",
+        message:
+          user.role === "technician"
+            ? "Đã từ chối yêu cầu cập nhật thông tin thợ"
+            : "Đã từ chối yêu cầu làm thợ",
       });
     } catch (err) {
       console.error(err);

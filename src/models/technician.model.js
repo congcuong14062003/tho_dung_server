@@ -12,10 +12,10 @@ export const TechnicianModel = {
       tr.description,
       tr.certifications,
       tr.status,
+      tr.type,
       tr.rejected_reason,
       tr.created_at,
       tr.updated_at,
-      
       JSON_ARRAYAGG(
         JSON_OBJECT(
           'skill_category_id', sc.id,
@@ -23,17 +23,61 @@ export const TechnicianModel = {
           'skill_category_color', sc.color
         )
       ) AS skills
-
-    FROM technician_requests tr
+    FROM (
+      SELECT *
+      FROM technician_requests
+      WHERE user_id = ?
+      ORDER BY created_at DESC
+      LIMIT 1
+    ) tr
     LEFT JOIN technician_request_skills trs ON trs.request_id = tr.id
     LEFT JOIN service_categories sc ON sc.id = trs.category_id
-    WHERE tr.user_id = ?
     GROUP BY tr.id
-    ORDER BY tr.created_at DESC
   `;
 
     const [rows] = await db.execute(query, [user_id]);
-    return rows;
+    return rows[0];
+  },
+  async updateProfileFromRequest(request, skills) {
+    // 1️⃣ Lấy profile hiện tại
+    const [rows] = await db.query(
+      `SELECT id FROM technician_profiles WHERE user_id = ? LIMIT 1`,
+      [request.user_id]
+    );
+    if (rows.length === 0) return;
+
+    const profileId = rows[0].id;
+
+    // 2️⃣ Cập nhật thông tin thợ
+    await db.query(
+      `UPDATE technician_profiles
+     SET experience_years = ?, working_area = ?, description = ?, certifications = ?, updated_at = NOW()
+     WHERE id = ?`,
+      [
+        request.experience_years,
+        request.working_area,
+        request.description,
+        request.certifications,
+        profileId,
+      ]
+    );
+
+    // 3️⃣ Xóa toàn bộ skill cũ
+    await db.query(
+      `DELETE FROM technician_profile_skills WHERE profile_id = ?`,
+      [profileId]
+    );
+
+    // 4️⃣ Insert skill mới
+    for (const s of skills) {
+      await db.query(
+        `INSERT INTO technician_profile_skills (id, profile_id, category_id)
+       VALUES (?, ?, ?)`,
+        [generateId("tech_skill_"), profileId, s.id]
+      );
+    }
+
+    return profileId;
   },
   // ===============================
   // GET ALL TECHNICIANS (MULTI SKILLS)
@@ -101,33 +145,44 @@ export const TechnicianModel = {
     return { data: rows, total };
   },
   async createRequest(data) {
-    const requestId = generateId("tech_req_");
+    const conn = await db.getConnection();
+    try {
+      await conn.beginTransaction();
+      const requestId = generateId("tech_req_");
 
-    // Tạo request
-    await db.query(
-      `INSERT INTO technician_requests 
-      (id, user_id, experience_years, working_area, description, certifications)
-     VALUES (?, ?, ?, ?, ?, ?)`,
-      [
-        requestId,
-        data.user_id,
-        data.experience_years || 0,
-        data.working_area,
-        data.description,
-        data.certifications,
-      ]
-    );
-
-    // Lưu danh sách kỹ năng vào bảng trung gian
-    for (const catId of data.skill_category_ids) {
+      // Tạo request
       await db.query(
-        `INSERT INTO technician_request_skills (id, request_id, category_id)
-       VALUES (?, ?, ?)`,
-        [generateId("tech_req_skill_"), requestId, catId]
+        `INSERT INTO technician_requests 
+      (id, user_id, experience_years, working_area, description, certifications, type)
+     VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        [
+          requestId,
+          data.user_id,
+          data.experience_years || 0,
+          data.working_area,
+          data.description,
+          data.certifications,
+          data.type,
+        ]
       );
-    }
 
-    return requestId;
+      // Lưu danh sách kỹ năng vào bảng trung gian
+      for (const catId of data.skill_category_ids) {
+        await db.query(
+          `INSERT INTO technician_request_skills (id, request_id, category_id)
+       VALUES (?, ?, ?)`,
+          [generateId("tech_req_skill_"), requestId, catId]
+        );
+      }
+
+      await conn.commit();
+      return requestId;
+    } catch (err) {
+      await conn.rollback();
+      throw err;
+    } finally {
+      conn.release();
+    }
   },
   async getPendingRequestByUser(userId) {
     const [rows] = await db.query(
@@ -235,6 +290,7 @@ export const TechnicianModel = {
         tr.description,
         tr.certifications,
         tr.status,
+        tr.type,
         tr.rejected_reason,
         tr.created_at
       FROM technician_requests tr

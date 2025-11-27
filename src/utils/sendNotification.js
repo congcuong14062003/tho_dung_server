@@ -1,5 +1,7 @@
 import admin from "../config/firebaseAdmin.js";
+import { getIO } from "../config/socket.js";
 import { DeviceModel } from "../models/device.model.js";
+import { NotificationModel } from "../models/notification.model.js";
 import { UserModel } from "../models/user.model.js";
 
 export const sendNotification = async ({ title, body, data = {}, userId }) => {
@@ -34,6 +36,7 @@ export const sendNotification = async ({ title, body, data = {}, userId }) => {
 
 export const sendNotificationToAdmins = async ({ title, body, data = {} }) => {
   try {
+    // Lấy danh sách admin
     const admins = await UserModel.findAdmins();
 
     if (!admins?.length) {
@@ -41,6 +44,33 @@ export const sendNotificationToAdmins = async ({ title, body, data = {} }) => {
       return;
     }
 
+    const adminIds = admins.map((a) => a.id);
+
+    // ===============================
+    // 1️⃣ Lưu DB cho tất cả admin
+    // ===============================
+    await NotificationModel.createForUsers(adminIds, {
+      title,
+      body,
+      type: "new_request",
+      action_data: data,
+    });
+
+    // ===============================
+    // 2️⃣ Bắn socket realtime
+    // ===============================
+    const io = getIO();
+    io.to("admin_room").emit("new_notification", {
+      title,
+      body,
+      data,
+    });
+
+    console.log("📢 Socket: đã gửi notification realtime tới admin");
+
+    // ===============================
+    // 3️⃣ Gửi FCM push notification
+    // ===============================
     let tokens = [];
 
     for (const adminUser of admins) {
@@ -70,7 +100,7 @@ export const sendNotificationToAdmins = async ({ title, body, data = {} }) => {
       )
     );
 
-    console.log("📨 Gửi thông báo admin:", results);
+    console.log("📨 Gửi FCM admin:", results);
   } catch (err) {
     console.error("🔥 Lỗi gửi thông báo admin:", err);
   }
