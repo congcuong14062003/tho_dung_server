@@ -19,6 +19,19 @@ const allowedOrigins = [
   "http://192.168.100.96:8081",
 ];
 
+// =====================================================
+// 🚀 Bypass CORS cho socket.io để không bị Express chặn
+// =====================================================
+app.use((req, res, next) => {
+  if (req.path.startsWith("/socket.io")) {
+    return next();
+  }
+  next();
+});
+
+// =====================================================
+// 🔥 CORS cho các route API
+// =====================================================
 app.use(
   cors({
     origin: (origin, callback) => {
@@ -41,12 +54,19 @@ app.use("/uploads", express.static("uploads"));
 // Router
 app.use("/apis", RouterMain(express.Router()));
 
-// 🔥 Tạo HTTP server bọc express
+// =====================================================
+// 🔥 HTTP server bọc express
+// =====================================================
 const server = http.createServer(app);
 
-// 🔥 Init socket
+// =====================================================
+// 🔥 Khởi tạo socket.io
+// =====================================================
 initSocket(server);
 
+// =====================================================
+// 🚀 Start server
+// =====================================================
 server.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server đang chạy tại port ${PORT}`);
 });
