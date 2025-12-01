@@ -21,6 +21,14 @@ CREATE TABLE users (
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );
 
+CREATE TABLE user_devices (
+    id VARCHAR(50) PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    fcm_token TEXT ,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+);
 
 
 
@@ -52,9 +60,8 @@ CREATE TABLE service_categories (
 
 -- ========================== -- TECHNICIAN PROFILES -- ========================== -- ========================== -- 
  CREATE TABLE technician_profiles ( 
- id INT AUTO_INCREMENT PRIMARY KEY, 
+id VARCHAR(50) PRIMARY KEY,
  user_id VARCHAR(50) NOT NULL, 
- skill_category_id VARCHAR(50) NOT NULL, -- Liên kết với danh mục kỹ năng 
  experience_years INT DEFAULT 0, -- Số năm kinh nghiệm 
  working_area VARCHAR(255), -- Khu vực làm việc 
  rating_avg DECIMAL(2,1) DEFAULT 0.0, -- Điểm trung bình đánh giá 
@@ -62,31 +69,41 @@ CREATE TABLE service_categories (
  certifications TEXT, -- Bằng cấp, chứng chỉ 
  created_at DATETIME DEFAULT CURRENT_TIMESTAMP, 
  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP, 
- FOREIGN KEY (user_id) REFERENCES users(id), 
- FOREIGN KEY (skill_category_id) REFERENCES service_categories(id) );
+ FOREIGN KEY (user_id) REFERENCES users(id)
+ );
+ 
+ 
+ CREATE TABLE technician_profile_skills (
+  id VARCHAR(50) PRIMARY KEY,
+  profile_id VARCHAR(50) NOT NULL,
+  category_id VARCHAR(50) NOT NULL,
+  FOREIGN KEY (profile_id) REFERENCES technician_profiles(id),
+  FOREIGN KEY (category_id) REFERENCES service_categories(id)
+);
+
  
  
  -- Thêm vào file SQL của anh (sau bảng technician_profiles)
 CREATE TABLE technician_requests (
   id VARCHAR(50) PRIMARY KEY,
   user_id VARCHAR(50) NOT NULL,
-  skill_category_id VARCHAR(50) NOT NULL,
   experience_years INT DEFAULT 0,
   working_area VARCHAR(255),
   description TEXT,
   certifications TEXT,
+  type ENUM('new', 'update') DEFAULT 'new',
   status ENUM('pending', 'approved', 'rejected') DEFAULT 'pending',
   rejected_reason TEXT NULL,
   approved_by VARCHAR(50) NULL,
   rejected_by VARCHAR(50) NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  
   FOREIGN KEY (user_id) REFERENCES users(id),
-  FOREIGN KEY (skill_category_id) REFERENCES service_categories(id),
   FOREIGN KEY (approved_by) REFERENCES users(id),
   FOREIGN KEY (rejected_by) REFERENCES users(id)
 );
+
+
 
 -- ==========================
 -- SERVICES
@@ -129,6 +146,16 @@ CREATE TABLE requests (
   FOREIGN KEY (technician_id) REFERENCES users(id),
   FOREIGN KEY (cancel_by) REFERENCES users(id)
 );
+
+
+CREATE TABLE technician_request_skills (
+  id VARCHAR(50) PRIMARY KEY,
+  request_id VARCHAR(50) NOT NULL,
+  category_id VARCHAR(50) NOT NULL,
+  FOREIGN KEY (request_id) REFERENCES technician_requests(id),
+  FOREIGN KEY (category_id) REFERENCES service_categories(id)
+);
+
 
 -- ALTER TABLE requests 
 -- MODIFY COLUMN 
@@ -321,12 +348,26 @@ CREATE TABLE complaints (
 -- NOTIFICATIONS
 -- ==========================
 CREATE TABLE notifications (
-  id VARCHAR(50) PRIMARY KEY,
-  user_id VARCHAR(50) NOT NULL,
-  title VARCHAR(100),
-  message TEXT,
-  type ENUM('system','job','payment','review') DEFAULT 'system',
-  is_read BOOLEAN DEFAULT 0,
-  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  FOREIGN KEY (user_id) REFERENCES users(id)
+    id INT AUTO_INCREMENT PRIMARY KEY,
+    user_id VARCHAR(50) NOT NULL,
+    title VARCHAR(255) NOT NULL,
+    body TEXT NOT NULL,
+
+    type ENUM(
+        'system',
+        'request_approved',
+        'request_rejected',
+        'new_request',
+        'update_request',
+        'order',
+        'custom'
+    ) DEFAULT 'system',
+
+    action_data JSON NULL,
+    is_read TINYINT(1) DEFAULT 0,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+
+    CONSTRAINT fk_notification_user
+        FOREIGN KEY (user_id) REFERENCES users(id)
+        ON DELETE CASCADE
 );
