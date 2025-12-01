@@ -38,6 +38,61 @@ export const TechnicianModel = {
     const [rows] = await db.execute(query, [user_id]);
     return rows[0];
   },
+  async getRequestDetailFull(requestId) {
+    // 1️⃣ Lấy request + thông tin user
+    const [rows] = await db.query(
+      `
+    SELECT 
+      tr.id AS request_id,
+      tr.user_id,
+      u.full_name,
+      u.phone,
+      u.avatar_link,
+
+      tr.experience_years,
+      tr.working_area,
+      tr.description,
+      tr.certifications,
+
+      tr.status,
+      tr.type,
+      tr.rejected_reason,
+      tr.created_at,
+      tr.updated_at
+    FROM technician_requests tr
+    JOIN users u ON u.id = tr.user_id
+    WHERE tr.id = ?
+    LIMIT 1
+  `,
+      [requestId]
+    );
+
+    if (rows.length === 0) return null;
+    const request = rows[0];
+
+    // 2️⃣ Lấy danh sách skill
+    const [skills] = await db.query(
+      `
+    SELECT 
+      sc.id,
+      sc.name,
+      sc.color
+    FROM technician_request_skills trs
+    JOIN service_categories sc ON sc.id = trs.category_id
+    WHERE trs.request_id = ?
+  `,
+      [requestId]
+    );
+
+    request.skills = skills;
+
+    // Avatar fallback
+    request.avatar_link =
+      request.avatar_link ||
+      "https://cdn-icons-png.flaticon.com/512/149/149071.png";
+
+    return request;
+  },
   async updateProfileFromRequest(request, skills) {
     // 1️⃣ Lấy profile hiện tại
     const [rows] = await db.query(
@@ -460,5 +515,14 @@ export const TechnicianModel = {
     );
 
     return rows;
+  },
+  async getRequestById(id) {
+    const [rows] = await db.execute(
+      `SELECT *
+     FROM technician_requests
+     WHERE id = ?`,
+      [id]
+    );
+    return rows[0];
   },
 };

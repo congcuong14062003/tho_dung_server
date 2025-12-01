@@ -28,6 +28,14 @@ router.post(
   authorizeRoles("admin"),
   TechnicianController.getPendingTechnicians
 );
+
+router.get(
+  "/admin/get-request-detail/:id",
+  verifyToken,
+  authorizeRoles("admin"),
+  TechnicianController.getRequestDetail
+);
+
 // User nộp đơn
 router.post(
   "/request-technician",

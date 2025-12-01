@@ -358,6 +358,7 @@ export const AuthController = {
           id: user.id,
           phone: user.phone,
           role: "admin",
+          full_name: user.full_name,
         },
         24 * 60 * 60
       ); // Admin token hết hạn nhanh hơn (tùy chỉnh)

@@ -65,7 +65,6 @@ export const RequestController = {
         requested_time,
         images,
       });
-
       // ================================
       // 🎉 Gửi thông báo cho admin CMS
       // ================================
@@ -256,6 +255,32 @@ export const RequestController = {
         action: req.body.action,
         reason: req.body.reason,
       });
+
+      const isAccept = req.body.action === "accept";
+      const requestId = req.body.request_id;
+
+      const title = isAccept
+        ? "Thợ đã chấp nhận yêu cầu"
+        : "Thợ đã từ chối yêu cầu";
+
+      const body = isAccept
+        ? `Một thợ vừa chấp nhận yêu cầu #${requestId}. Vui lòng kiểm tra chi tiết.`
+        : req.body.reason
+        ? `Một thợ đã từ chối yêu cầu #${requestId}. Lý do: ${req.body.reason}.`
+        : `Một thợ đã từ chối yêu cầu #${requestId}.`;
+
+      // ================================
+      // 🎉 Gửi thông báo cho admin CMS
+      // ================================
+      await sendNotificationToAdmins({
+        title,
+        body,
+        data: {
+          request_id: String(requestId),
+          url: `/requests/${requestId}`,
+        },
+      });
+
       return baseResponse(res, {
         code: 200,
         status: true,
@@ -274,10 +299,6 @@ export const RequestController = {
       });
     }
   },
-
-  // XÓA HOÀN TOÀN 2 HÀM NÀY – KHÔNG CẦN NỮA!
-  // async uploadSurveyImages → dùng insertRequestImages trong Model nếu cần
-  // async createQuotation → Model đã làm hết rồi
 
   // Thay bằng hàm mới (nếu vẫn muốn riêng route up ảnh khảo sát)
   async uploadSurveyImages(req, res) {

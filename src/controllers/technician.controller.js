@@ -1,6 +1,7 @@
 import { baseResponse } from "../utils/response.helper.js";
 import { TechnicianModel } from "../models/technician.model.js";
 import { UserModel } from "../models/user.model.js";
+import { sendNotificationToAdmins } from "../utils/sendNotification.js";
 
 export const TechnicianController = {
   async getMyRequests(req, res) {
@@ -93,6 +94,44 @@ export const TechnicianController = {
     }
   },
 
+  async getRequestDetail(req, res) {
+    try {
+      const requestId = req.params.id;
+
+      if (!requestId) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu request_id",
+        });
+      }
+
+      const data = await TechnicianModel.getRequestDetailFull(requestId);
+
+      if (!data) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy yêu cầu",
+        });
+      }
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Lấy chi tiết yêu cầu thành công",
+        data: data,
+      });
+    } catch (error) {
+      console.error(error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: error.message,
+      });
+    }
+  },
+
   // User nộp đơn làm thợ hoặc chỉnh sửa thông tin thợ
   async applyToBecomeTechnician(req, res) {
     try {
@@ -137,19 +176,42 @@ export const TechnicianController = {
         });
       }
 
-      // 👉 Xác định type (new hoặc update)
+      // 👉 Xác định loại (new hoặc update)
       const type = user.role === "technician" ? "update" : "new";
 
       // Tạo request
-      await TechnicianModel.createRequest({
+      const requestId = await TechnicianModel.createRequest({
         user_id: userId,
         skill_category_ids,
         experience_years,
         working_area,
         description,
         certifications,
-        type, // 👈 thêm type vào đây
+        type,
       });
+
+      // ================================
+      // 🎉 Gửi thông báo cho admin CMS
+      // ================================
+      const notifyData = {
+        title:
+          type === "update"
+            ? "Yêu cầu cập nhật thông tin thợ"
+            : "Yêu cầu làm thợ mới",
+
+        body:
+          type === "update"
+            ? `${user.full_name} đã gửi yêu cầu chỉnh sửa thông tin`
+            : `${user.full_name} đã gửi yêu cầu trở thành thợ`,
+
+        data: {
+          request_id: String(requestId),
+          type,
+          url: `/technicians/requests/${requestId}`,
+        },
+      };
+
+      await sendNotificationToAdmins(notifyData);
 
       return baseResponse(res, {
         code: 200,
