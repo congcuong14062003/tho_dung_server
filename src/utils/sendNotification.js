@@ -4,12 +4,48 @@ import { DeviceModel } from "../models/device.model.js";
 import { NotificationModel } from "../models/notification.model.js";
 import { UserModel } from "../models/user.model.js";
 
-export const sendNotification = async ({ title, body, data = {}, userId }) => {
+export const sendNotification = async ({
+  title,
+  body,
+  data = {},
+  userId,
+  type, // loại thông báo tuỳ anh định nghĩa
+}) => {
   try {
+    if (!userId) {
+      console.log("⚠ Thiếu userId để gửi thông báo");
+      return;
+    }
+
+    // ===============================
+    // 1️⃣ Lưu thông báo vào DB
+    // ===============================
+    await NotificationModel.createForUsers([userId], {
+      title,
+      body,
+      type: "new_request",
+      action_data: data,
+    });
+
+    // ===============================
+    // 2️⃣ Gửi realtime qua socket
+    // ===============================
+    const io = getIO();
+    io.to(userId).emit("new_notification", {
+      title,
+      body,
+      data,
+    });
+
+    console.log(`📢 Socket: đã gửi notification realtime tới user ${userId}`);
+
+    // ===============================
+    // 3️⃣ Gửi FCM push
+    // ===============================
     const devices = await DeviceModel.findByUserId(userId);
 
     if (!devices?.length) {
-      console.log(`⚠ Không có FCM token cho user ${userId}`);
+      console.log(`⚠ User ${userId} không có thiết bị / token FCM`);
       return;
     }
 
@@ -28,7 +64,7 @@ export const sendNotification = async ({ title, body, data = {}, userId }) => {
       )
     );
 
-    console.log("📨 FCM response:", results);
+    console.log(`📨 Đã gửi FCM đến user ${userId}:`, results);
   } catch (err) {
     console.error("🔥 Lỗi gửi thông báo:", err);
   }

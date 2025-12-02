@@ -1,7 +1,10 @@
 import { baseResponse } from "../utils/response.helper.js";
 import { TechnicianModel } from "../models/technician.model.js";
 import { UserModel } from "../models/user.model.js";
-import { sendNotificationToAdmins } from "../utils/sendNotification.js";
+import {
+  sendNotification,
+  sendNotificationToAdmins,
+} from "../utils/sendNotification.js";
 
 export const TechnicianController = {
   async getMyRequests(req, res) {
@@ -272,6 +275,21 @@ export const TechnicianController = {
         adminId
       );
 
+      // 🎉 Gửi NOTIFICATION CHO THỢ
+      await sendNotification({
+        userId: user.id,
+        title: "Yêu cầu làm thợ được duyệt",
+        body:
+          user.role === "technician"
+            ? "Yêu cầu chỉnh sửa thông tin thợ của bạn đã được duyệt."
+            : "Bạn đã trở thành thợ chính thức trên hệ thống!",
+        // type: "technician_approved",
+        data: {
+          request_id: String(request_id),
+          status: "approved",
+          url: `/technicians/profile/${user.id}`,
+        },
+      });
       return baseResponse(res, {
         code: 200,
         status: true,
@@ -286,7 +304,7 @@ export const TechnicianController = {
       });
     }
   },
-  // 3. Admin từ chối
+
   // TỪ CHỐI YÊU CẦU LÀM THỢ
   async rejectTechnician(req, res) {
     try {
@@ -320,6 +338,25 @@ export const TechnicianController = {
         adminId,
         reason
       );
+      // ❌ Gửi thông báo tới thợ khi bị từ chối
+      await sendNotification({
+        userId: user.id,
+        title: "Yêu cầu bị từ chối",
+        body:
+          user.role === "technician"
+            ? `Yêu cầu cập nhật thông tin của bạn bị từ chối. Lý do: ${
+                reason || "Không rõ"
+              }`
+            : `Yêu cầu trở thành thợ của bạn bị từ chối. Lý do: ${
+                reason || "Không rõ"
+              }`,
+        // type: "technician_rejected",
+        data: {
+          request_id: String(request_id),
+          status: "rejected",
+          reason: reason || "",
+        },
+      });
 
       // ❌ 2. KHÔNG làm gì với technician_profiles
       // ❌ 3. KHÔNG đổi role
@@ -343,6 +380,7 @@ export const TechnicianController = {
       });
     }
   },
+
   // ==================== KHÓA THỢ ====================
   async blockTechnician(req, res) {
     try {

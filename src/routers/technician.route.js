@@ -41,7 +41,7 @@ router.post(
   "/request-technician",
   verifyToken,
   checkUserStatus,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   TechnicianController.applyToBecomeTechnician
 );
 
