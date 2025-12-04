@@ -287,6 +287,7 @@ export const AuthController = {
           userInfor: {
             id: user.id,
             full_name: user.full_name,
+            id_card: user.id_card,
             phone: user.phone,
             role: user.role,
             avatar_link: user.avatar_link,
