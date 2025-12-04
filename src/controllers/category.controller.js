@@ -74,9 +74,9 @@ export const CategoryController = {
   async create(req, res) {
     try {
       const { name, description, color, status } = req.body;
-      const icon = req.file
-        ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`
-        : null;
+
+      // URL icon lấy trực tiếp từ Cloudinary do multer-storage-cloudinary trả về
+      const icon = req.file ? req.file.path : null;
 
       if (!name) {
         return baseResponse(res, {
@@ -86,7 +86,7 @@ export const CategoryController = {
         });
       }
 
-      // Kiểm tra trùng tên
+      // Kiểm tra tên trùng
       const existed = await CategoryModel.checkNameExists(name);
       if (existed) {
         return baseResponse(res, {
@@ -96,6 +96,7 @@ export const CategoryController = {
         });
       }
 
+      // Lưu DB
       const id = await CategoryModel.create({
         name,
         description,
@@ -118,7 +119,6 @@ export const CategoryController = {
       });
     }
   },
-
   // ===============================
   // 🔹 Cập nhật danh mục (Admin)
   // ===============================
