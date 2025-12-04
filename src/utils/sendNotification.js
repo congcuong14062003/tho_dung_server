@@ -1,6 +1,6 @@
 import { log } from "console";
 import admin from "../config/firebaseAdmin.js";
-import { getIO, getUserSockets } from "../config/socket.js";
+import { getIO } from "../config/socket.js";
 import { DeviceModel } from "../models/device.model.js";
 import { NotificationModel } from "../models/notification.model.js";
 import { UserModel } from "../models/user.model.js";
@@ -29,21 +29,12 @@ export const sendNotification = async ({ title, body, data = {}, userId }) => {
 
     // 2) Gửi realtime đến tất cả socket của user
     const io = getIO();
-    const socketIds = getUserSockets(userId);
-    if (socketIds.length > 0) {
-      socketIds.forEach((sid) => {
-        // Emit đến TỪNG socket → Cả 2 thiết bị nhận
-        io.to(sid).emit("new_notification", {
-          ...notification,
-          message: notification.body,
-          time: notification.created_at,
-        });
-      });
+    io.to(userId).emit("new_notification", {
+      ...notification,
+      message: notification.body,
+      time: notification.created_at,
+    });
 
-      console.log(`📢 Sent realtime to user ${userId} → sockets:`, socketIds); // Log số lượng sockets
-    } else {
-      console.log(`⚠ User ${userId} offline`);
-    }
     console.log(`📢 Socket: đã gửi notification realtime tới user ${userId}`);
 
     // ===============================
