@@ -19,10 +19,6 @@ export default function RouterMain(app) {
   app.use("/upload", upload);
   app.use("/payments", payment)
   app.use("/notifications", notification)
-
-  
-
-  
   app.use("/test", test); // ⭐ router test
   return app;
 }
