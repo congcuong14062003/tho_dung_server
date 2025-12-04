@@ -8,9 +8,8 @@ const UploadController = {
         });
       }
 
-      const urls = req.files.map(
-        (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
-      );
+      // Cloudinary trả về file.path = URL ảnh
+      const urls = req.files.map(file => file.path);
 
       return res.status(200).json({
         status: true,

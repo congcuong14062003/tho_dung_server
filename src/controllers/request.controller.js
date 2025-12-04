@@ -28,10 +28,7 @@ export const RequestController = {
       } = req.body;
       const user_id = req.user.id;
 
-      const images =
-        req.files?.map(
-          (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
-        ) || [];
+      const images = req.files?.map((file) => file.path);
 
       if (images.length === 0) {
         return baseResponse(res, {
@@ -304,10 +301,7 @@ export const RequestController = {
   // Thay bằng hàm mới (nếu vẫn muốn riêng route up ảnh khảo sát)
   async uploadSurveyImages(req, res) {
     try {
-      const images =
-        req.files?.map(
-          (f) => `${process.env.URL_SERVER}/uploads/${f.filename}`
-        ) || [];
+      const images = req.files?.map((file) => file.path);
       if (images.length === 0)
         return baseResponse(res, {
           code: 400,

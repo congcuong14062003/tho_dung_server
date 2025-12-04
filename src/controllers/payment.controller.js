@@ -70,15 +70,13 @@ export const PaymentController = {
       // ===============================
       // 🔥 Giống createRequest – convert URL
       // ===============================
-      const images = files.map(
-        (file) => `${process.env.URL_SERVER}/uploads/${file.filename}`
-      );
+      const images = files.map((file) => file.path);
 
       const result = await PaymentModel.uploadProof({
         payment_id,
         user_id: userId,
         images, // ⬅ gửi URLs xuống DB
-        request_id
+        request_id,
       });
 
       return baseResponse(res, {

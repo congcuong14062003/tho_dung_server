@@ -75,6 +75,8 @@ export const CategoryController = {
     try {
       const { name, description, color, status } = req.body;
 
+      console.log("req.file: ", req.file);
+
       // URL icon lấy trực tiếp từ Cloudinary do multer-storage-cloudinary trả về
       const icon = req.file ? req.file.path : null;
 
@@ -126,10 +128,10 @@ export const CategoryController = {
     try {
       const { id, name, description, color, status } = req.body;
 
-      const icon = req.file
-        ? `${process.env.URL_SERVER}/uploads/${req.file.filename}`
-        : null;
+      console.log("req.file: ", req.file);
 
+      // URL icon lấy trực tiếp từ Cloudinary do multer-storage-cloudinary trả về
+      const icon = req.file ? req.file.path : null;
       const current = await CategoryModel.getById(id);
       if (!current) {
         return baseResponse(res, {

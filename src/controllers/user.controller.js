@@ -53,7 +53,7 @@ export const UserController = {
         });
       }
 
-      const avatarPath = `${process.env.URL_SERVER}/uploads/${req.file.filename}`;
+      const avatarPath = req.file ? req.file.path : null;
       const result = await UserModel.updateAvatar(userId, avatarPath);
 
       if (!result) {
