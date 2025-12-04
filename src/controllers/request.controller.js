@@ -72,6 +72,7 @@ export const RequestController = {
         title: "Yêu cầu mới",
         body: `Khách đã tạo yêu cầu: ${name_request}`,
         data: {
+          type: "new_request",
           request_id: String(requestId),
           url: `/requests/${requestId}`, // 👈 thêm link vào đây
         },

@@ -203,6 +203,7 @@ export const AuthController = {
   async loginClient(req, res) {
     try {
       const { phone, password, fcm_token } = req.body;
+      console.log("fcm: ", fcm_token);
 
       if (!phone || !password) {
         return baseResponse(res, {

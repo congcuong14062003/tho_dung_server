@@ -5,6 +5,8 @@ import {
   sendNotification,
   sendNotificationToAdmins,
 } from "../utils/sendNotification.js";
+import { type } from "os";
+import { url } from "inspector";
 
 export const TechnicianController = {
   async getMyRequests(req, res) {
@@ -209,7 +211,7 @@ export const TechnicianController = {
 
         data: {
           request_id: String(requestId),
-          type,
+          type: "request_technician",
           url: `/technicians/requests/${requestId}`,
         },
       };
@@ -283,11 +285,11 @@ export const TechnicianController = {
           user.role === "technician"
             ? "Yêu cầu chỉnh sửa thông tin thợ của bạn đã được duyệt."
             : "Bạn đã trở thành thợ chính thức trên hệ thống!",
-        // type: "technician_approved",
         data: {
+          type: "request_technician_approved",
           request_id: String(request_id),
           status: "approved",
-          url: `/technicians/profile/${user.id}`,
+          url: `/worker/apply`,
         },
       });
       return baseResponse(res, {
@@ -350,11 +352,12 @@ export const TechnicianController = {
             : `Yêu cầu trở thành thợ của bạn bị từ chối. Lý do: ${
                 reason || "Không rõ"
               }`,
-        // type: "technician_rejected",
         data: {
+          type: "request_technician_rejected",
           request_id: String(request_id),
           status: "rejected",
           reason: reason || "",
+          url: `/worker/apply`,
         },
       });
 

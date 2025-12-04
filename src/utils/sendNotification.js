@@ -1,42 +1,49 @@
+import { log } from "console";
 import admin from "../config/firebaseAdmin.js";
-import { getIO } from "../config/socket.js";
+import { getIO, getUserSockets } from "../config/socket.js";
 import { DeviceModel } from "../models/device.model.js";
 import { NotificationModel } from "../models/notification.model.js";
 import { UserModel } from "../models/user.model.js";
 
-export const sendNotification = async ({
-  title,
-  body,
-  data = {},
-  userId,
-  type, // loại thông báo tuỳ anh định nghĩa
-}) => {
+export const sendNotification = async ({ title, body, data = {}, userId }) => {
   try {
     if (!userId) {
       console.log("⚠ Thiếu userId để gửi thông báo");
       return;
     }
 
-    // ===============================
-    // 1️⃣ Lưu thông báo vào DB
-    // ===============================
-    await NotificationModel.createForUsers([userId], {
+    // 1️⃣ Lưu DB và lấy lại FULL object
+    const notification = await NotificationModel.create({
+      user_id: userId,
       title,
       body,
-      type: "new_request",
+      type: data?.type || "system",
       action_data: data,
     });
 
-    // ===============================
-    // 2️⃣ Gửi realtime qua socket
-    // ===============================
-    const io = getIO();
-    io.to(userId).emit("new_notification", {
-      title,
-      body,
-      data,
+    console.log("data: ", {
+      ...notification,
+      message: notification.body,
+      time: notification.created_at,
     });
 
+    // 2) Gửi realtime đến tất cả socket của user
+    const io = getIO();
+    const socketIds = getUserSockets(userId);
+    if (socketIds.length > 0) {
+      socketIds.forEach((sid) => {
+        // Emit đến TỪNG socket → Cả 2 thiết bị nhận
+        io.to(sid).emit("new_notification", {
+          ...notification,
+          message: notification.body,
+          time: notification.created_at,
+        });
+      });
+
+      console.log(`📢 Sent realtime to user ${userId} → sockets:`, socketIds); // Log số lượng sockets
+    } else {
+      console.log(`⚠ User ${userId} offline`);
+    }
     console.log(`📢 Socket: đã gửi notification realtime tới user ${userId}`);
 
     // ===============================
@@ -82,25 +89,17 @@ export const sendNotificationToAdmins = async ({ title, body, data = {} }) => {
 
     const adminIds = admins.map((a) => a.id);
 
-    // ===============================
-    // 1️⃣ Lưu DB cho tất cả admin
-    // ===============================
-    await NotificationModel.createForUsers(adminIds, {
+    // 1️⃣ Lưu DB và lấy lại danh sách FULL notification
+    const notifications = await NotificationModel.createForUsers(adminIds, {
       title,
       body,
-      type: "new_request",
+      type: data?.type || "system",
       action_data: data,
     });
 
-    // ===============================
-    // 2️⃣ Bắn socket realtime
-    // ===============================
+    // 2️⃣ Emit realtime đúng format
     const io = getIO();
-    io.to("admin_room").emit("new_notification", {
-      title,
-      body,
-      data,
-    });
+    io.to("admin_room").emit("new_notification", notifications);
 
     console.log("📢 Socket: đã gửi notification realtime tới admin");
 
