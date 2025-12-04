@@ -12,6 +12,7 @@ const PORT = process.env.PORT || 5000;
 
 const allowedOrigins = [
   "http://localhost:5173",
+  "https://tho-dung-admin.onrender.com",
   "http://localhost:19006",
   "exp://127.0.0.1:19000",
   "http://192.168.1.5:5173",
