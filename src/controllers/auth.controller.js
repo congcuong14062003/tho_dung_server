@@ -456,7 +456,7 @@ export const AuthController = {
     try {
       const userId = req.user.id;
       const { fcm_token } = req.body;
-
+      console.log("fcm_token: ", fcm_token);
       if (!fcm_token) {
         return baseResponse(res, {
           code: 400,
