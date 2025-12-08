@@ -221,14 +221,36 @@ export const RequestController = {
   },
 
   // Các hàm còn lại – chỉ gọi Model (đã xử lý hết logic + transaction)
+  // 4. Gán thợ – cần gửi thông báo cho thợ
   async assignRequest(req, res) {
     try {
+      const { request_id, technician_id, reason } = req.body;
+      const admin_id = req.user.id;
+
       const result = await RequestModel.assignRequest({
-        request_id: req.body.request_id,
-        technician_id: req.body.technician_id,
-        admin_id: req.user.id,
-        reason: req.body.reason,
+        request_id,
+        technician_id,
+        admin_id,
+        reason,
       });
+
+      // 🟢 Lấy thông tin request để lấy tên, mô tả…
+      const request = await RequestModel.getRequestDetail(request_id);
+
+      // ===============================
+      // 🎉 Gửi NOTIFICATION CHO THỢ
+      // ===============================
+      await sendNotification({
+        userId: technician_id,
+        title: "Bạn được giao một yêu cầu mới",
+        body: `Yêu cầu: ${request.name_request}`,
+        data: {
+          type: "assign_job",
+          request_id: String(request_id),
+          url: `/assigned/${request_id}`,
+        },
+      });
+
       return baseResponse(res, {
         code: 200,
         status: true,
@@ -257,24 +279,31 @@ export const RequestController = {
       const isAccept = req.body.action === "accept";
       const requestId = req.body.request_id;
 
+      // ----- TITLE -----
       const title = isAccept
-        ? "Thợ đã chấp nhận yêu cầu"
-        : "Thợ đã từ chối yêu cầu";
+        ? "Thợ đã chấp nhận yêu cầu gán thợ"
+        : "Thợ đã từ chối yêu cầu gán thợ";
 
+      // ----- BODY -----
       const body = isAccept
         ? `Một thợ vừa chấp nhận yêu cầu #${requestId}. Vui lòng kiểm tra chi tiết.`
         : req.body.reason
         ? `Một thợ đã từ chối yêu cầu #${requestId}. Lý do: ${req.body.reason}.`
         : `Một thợ đã từ chối yêu cầu #${requestId}.`;
 
-      // ================================
-      // 🎉 Gửi thông báo cho admin CMS
-      // ================================
+      // ----- TYPE MỚI -----
+      const notiType = isAccept
+        ? "technician_accept_assign"
+        : "technician_reject_assign";
+
+      // ----- GỬI NOTI CHO ADMIN -----
       await sendNotificationToAdmins({
         title,
         body,
+        type: notiType, // <---- thêm type mới vào đây
         data: {
           request_id: String(requestId),
+          action: isAccept ? "accept" : "reject",
           url: `/requests/${requestId}`,
         },
       });
@@ -282,10 +311,9 @@ export const RequestController = {
       return baseResponse(res, {
         code: 200,
         status: true,
-        message:
-          req.body.action === "accept"
-            ? "Chấp nhận yêu cầu thành công"
-            : "Từ chối yêu cầu thành công",
+        message: isAccept
+          ? "Chấp nhận yêu cầu thành công"
+          : "Từ chối yêu cầu thành công",
         data: result,
       });
     } catch (error) {
@@ -297,7 +325,6 @@ export const RequestController = {
       });
     }
   },
-
   // Thay bằng hàm mới (nếu vẫn muốn riêng route up ảnh khảo sát)
   async uploadSurveyImages(req, res) {
     try {
