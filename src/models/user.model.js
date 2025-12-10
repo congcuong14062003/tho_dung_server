@@ -144,4 +144,20 @@ export const UserModel = {
     const [rows] = await db.query(`SELECT id FROM users WHERE role = 'admin'`);
     return rows; // [{id:1}, {id:5}, ...]
   },
+
+  async getUserWithPassword(id) {
+    const [rows] = await db.query(
+      `SELECT id, full_name, phone, password_hash 
+     FROM users WHERE id = ?`,
+      [id]
+    );
+    return rows[0] || null;
+  },
+  async updateUserPassword(id, passwordHash) {
+    const [result] = await db.query(
+      `UPDATE users SET password_hash = ?, updated_at = NOW() WHERE id = ?`,
+      [passwordHash, id]
+    );
+    return result.affectedRows > 0;
+  },
 };

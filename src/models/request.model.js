@@ -44,6 +44,28 @@ export const insertStatusLog = async ({
   );
 };
 
+const STATUS_GROUP = {
+  all: null,
+  pending: ["pending", "assigning", "assigned", "quoted"],
+  in_progress: ["in_progress", "customer_review", "payment", "payment_review"],
+  completed: ["completed"],
+  cancelled: ["cancelled"],
+};
+
+const STATUS_GROUP_TECHNICIAN = {
+  all: null,
+
+  pending: ["pending", "assigning"],
+
+  assigned: ["assigned"],
+
+  in_progress: ["in_progress", "customer_review", "payment", "payment_review", "quoted"],
+
+  completed: ["completed"],
+
+  cancelled: ["cancelled"],
+};
+
 /**
  * Cập nhật trạng thái request + các field phụ (cancel_reason, technician_id, completed_at...)
  */
@@ -310,16 +332,21 @@ export const RequestModel = {
   }) {
     const search = `%${keySearch}%`;
 
-    // Nếu status = all thì không filter theo trạng thái
-    let statusCondition = "";
-    const params = [userId, search, search, search, search, limit, offset];
+    // Map status group
+    const mappedStatuses = STATUS_GROUP[status] || null;
 
-    if (status !== "all") {
-      statusCondition = "AND r.status = ?";
-      params.splice(1, 0, status); // thêm status ngay sau user_id
+    let statusCondition = "";
+    const params = [userId];
+
+    if (mappedStatuses) {
+      statusCondition = `AND r.status IN (${mappedStatuses
+        .map(() => "?")
+        .join(",")})`;
+      params.push(...mappedStatuses);
     }
 
-    // Truy vấn danh sách yêu cầu
+    params.push(search, search, search, search, limit, offset);
+
     const [rows] = await db.query(
       `
     SELECT 
@@ -338,7 +365,7 @@ export const RequestModel = {
     JOIN services s ON r.service_id = s.id
     JOIN service_categories sc ON s.category_id = sc.id
     WHERE 
-      r.user_id = ? 
+      r.user_id = ?
       ${statusCondition}
       AND (
         r.name_request LIKE ? OR
@@ -352,9 +379,10 @@ export const RequestModel = {
       params
     );
 
-    // Đếm tổng số
-    const countParams = [userId, search, search, search, search];
-    if (status !== "all") countParams.splice(1, 0, status);
+    // Count
+    const countParams = [userId];
+    if (mappedStatuses) countParams.push(...mappedStatuses);
+    countParams.push(search, search, search, search);
 
     const [[{ total }]] = await db.query(
       `
@@ -377,7 +405,6 @@ export const RequestModel = {
 
     return { data: rows, total };
   },
-
   // ===============================
   // 🔹 Lấy danh sách yêu cầu được gán cho thợ
   // ===============================
@@ -390,21 +417,20 @@ export const RequestModel = {
   }) {
     const search = `%${keySearch}%`;
 
-    let statusCondition = "";
-    const params = [
-      technicianId,
-      search,
-      search,
-      search,
-      search,
-      limit,
-      offset,
-    ];
+    // map status cho thợ
+    const mappedStatuses = STATUS_GROUP_TECHNICIAN[status] || null;
 
-    if (status !== "all") {
-      statusCondition = "AND r.status = ?";
-      params.splice(1, 0, status); // thêm status ngay sau technicianId
+    let statusCondition = "";
+    const params = [technicianId];
+
+    if (mappedStatuses) {
+      statusCondition = `AND r.status IN (${mappedStatuses
+        .map(() => "?")
+        .join(",")})`;
+      params.push(...mappedStatuses);
     }
+
+    params.push(search, search, search, search, limit, offset);
 
     const [rows] = await db.query(
       `
@@ -428,7 +454,7 @@ export const RequestModel = {
     JOIN service_categories sc ON s.category_id = sc.id
     JOIN users u ON r.user_id = u.id
     WHERE 
-      r.technician_id = ? 
+      r.technician_id = ?
       ${statusCondition}
       AND (
         r.name_request LIKE ? OR
@@ -442,9 +468,10 @@ export const RequestModel = {
       params
     );
 
-    // Đếm tổng số bản ghi
-    const countParams = [technicianId, search, search, search, search];
-    if (status !== "all") countParams.splice(1, 0, status);
+    // Count
+    const countParams = [technicianId];
+    if (mappedStatuses) countParams.push(...mappedStatuses);
+    countParams.push(search, search, search, search);
 
     const [[{ total }]] = await db.query(
       `
@@ -453,7 +480,7 @@ export const RequestModel = {
     JOIN services s ON r.service_id = s.id
     JOIN service_categories sc ON s.category_id = sc.id
     WHERE 
-      r.technician_id = ? 
+      r.technician_id = ?
       ${statusCondition}
       AND (
         r.name_request LIKE ? OR
@@ -467,7 +494,6 @@ export const RequestModel = {
 
     return { data: rows, total };
   },
-
   // ===============================
   // 🔹 Lấy chi tiết yêu cầu
   // ===============================
@@ -877,7 +903,7 @@ export const RequestModel = {
 
         await conn.query(
           `UPDATE quotation_items SET status = ?, note = ?, reason = ? WHERE id = ?`,
-          [status, note || null, reason || null,  item_id]
+          [status, note || null, reason || null, item_id]
         );
 
         await conn.query(
@@ -901,7 +927,14 @@ export const RequestModel = {
           `INSERT INTO quotation_items_logs 
            (id, quotation_item_id, old_status, new_status, note, changed_by)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [generateId("QLOG"), item_id, old.status, status, reason, technician_id]
+          [
+            generateId("QLOG"),
+            item_id,
+            old.status,
+            status,
+            reason,
+            technician_id,
+          ]
         );
       }
 

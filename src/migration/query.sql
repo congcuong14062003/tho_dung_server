@@ -352,22 +352,50 @@ CREATE TABLE notifications (
     user_id VARCHAR(50) NOT NULL,
     title VARCHAR(255) NOT NULL,
     body TEXT NOT NULL,
-
     type ENUM(
-        'system',
-        'request_approved',
-        'request_rejected',
-        'new_request',
-        'update_request',
-        'order',
-        'custom'
-    ) DEFAULT 'system',
-
+		'system',
+		'request_cancel',
+		'request_technician_approved',
+		'request_technician_rejected',
+		'request_technician',
+		'new_request',
+		'assign_job',
+		'quote_from_worker',
+		'quote_approved',
+		'quote_rejected',
+		'report_job',
+		'accept_inspection',
+		'reject_inspection',
+		'payment',
+		'payment_approved',
+		'technician_accept_assign',
+		'technician_reject_assign'
+	) DEFAULT 'system',
     action_data JSON NULL,
     is_read TINYINT(1) DEFAULT 0,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-
     CONSTRAINT fk_notification_user
         FOREIGN KEY (user_id) REFERENCES users(id)
         ON DELETE CASCADE
 );
+ALTER TABLE notifications 
+MODIFY type ENUM(
+    'system',
+    'request_cancel',
+    'request_technician_approved',
+    'request_technician_rejected',
+    'request_technician',
+    'new_request',
+    'assign_job',
+    'quote_from_worker',
+    'quote_approved',
+    'quote_rejected',
+    'report_job',
+    'accept_inspection',
+    'reject_inspection',
+    'payment',
+    'payment_approved',
+    'technician_accept_assign',
+    'technician_reject_assign'
+) DEFAULT 'system';
+

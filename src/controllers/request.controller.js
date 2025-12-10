@@ -15,7 +15,7 @@ const handlePagination = (req) => {
   return { page, size, keySearch, status, limit: size, offset };
 };
 export const RequestController = {
-  // 1. Tạo yêu cầu – chỉ validate
+  // Tạo yêu cầu – chỉ validate
   async create(req, res) {
     try {
       const {
@@ -91,13 +91,17 @@ export const RequestController = {
     }
   },
 
-  // 2. Hủy yêu cầu – gọn hơn
+  //  Hủy yêu cầu – gọn hơn
+  //  Hủy yêu cầu – gọn hơn + thông báo admin
   async cancelRequest(req, res) {
     try {
+      const { request_id, reason } = req.body;
+      const userId = req.user.id;
+
       const result = await RequestModel.cancelRequest({
-        request_id: req.body.request_id,
-        user_id: req.user.id,
-        reason: req.body.reason,
+        request_id,
+        user_id: userId,
+        reason,
       });
 
       if (!result.success) {
@@ -107,6 +111,40 @@ export const RequestController = {
           message: result.message,
         });
       }
+
+      // =============================================
+      //  🔔 GỬI NOTIFICATION SAU KHI HỦY THÀNH CÔNG
+      // =============================================
+
+      const title = "Khách hàng đã hủy yêu cầu";
+      const body = `Yêu cầu #${request_id} đã bị hủy. Lý do: ${
+        reason || "Không rõ lý do"
+      }`;
+
+      // 1️⃣ Gửi thông báo đến tất cả admin
+      await sendNotificationToAdmins({
+        title,
+        body,
+        data: {
+          type: "request_cancel",
+          request_id: String(request_id),
+          url: `/requests/${request_id}`,
+        },
+      });
+
+      // // 2️⃣ Gửi thông báo tới thợ nếu đơn có thợ
+      // if (result.technician_id) {
+      //   await sendNotification({
+      //     userId: result.technician_id,
+      //     title,
+      //     body,
+      //     data: {
+      //       type: "request_cancel",
+      //       request_id: String(request_id),
+      //       url: `/request/${request_id}`,
+      //     },
+      //   });
+      // }
 
       return baseResponse(res, {
         code: 200,
@@ -122,8 +160,7 @@ export const RequestController = {
       });
     }
   },
-
-  // 3. Các hàm lấy danh sách – dùng helper
+  // Các hàm lấy danh sách – dùng helper
   async getAll(req, res) {
     try {
       const { data, total } = await RequestModel.getAll(handlePagination(req));
@@ -142,6 +179,7 @@ export const RequestController = {
     }
   },
 
+  // lấy danh sách yêu cầu bởi khách hàng
   async getRequestsByUser(req, res) {
     try {
       const params = { ...handlePagination(req), userId: req.user.id };
@@ -161,6 +199,7 @@ export const RequestController = {
     }
   },
 
+  // lấy danh sách yêu cầu bởi người thợ
   async getRequestsByTechnician(req, res) {
     try {
       const params = { ...handlePagination(req), technicianId: req.user.id };
@@ -182,7 +221,7 @@ export const RequestController = {
     }
   },
 
-  // 4. Chi tiết yêu cầu – thêm check quyền (rất quan trọng!)
+  // Chi tiết yêu cầu – thêm check quyền (rất quan trọng!)
   async getRequestDetail(req, res) {
     try {
       const { id } = req.params;
@@ -267,6 +306,7 @@ export const RequestController = {
     }
   },
 
+  // phản hồi khi được gán việc
   async technicianResponse(req, res) {
     try {
       const userId = req.user.id;
@@ -356,8 +396,8 @@ export const RequestController = {
       await sendNotificationToAdmins({
         title,
         body,
-        type: notiType,
         data: {
+          type: notiType,
           request_id: String(request_id),
           action: isAccept ? "accept" : "reject",
           url: `/requests/${request_id}`,
@@ -400,6 +440,7 @@ export const RequestController = {
       });
     }
   },
+
   // Thay bằng hàm mới (nếu vẫn muốn riêng route up ảnh khảo sát)
   async uploadSurveyImages(req, res) {
     try {
@@ -434,6 +475,7 @@ export const RequestController = {
     }
   },
 
+  // Tạo báo giá cho khách hàng
   async createQuotation(req, res) {
     try {
       const userId = req.user.id;
@@ -510,8 +552,8 @@ export const RequestController = {
       await sendNotificationToAdmins({
         title,
         body,
-        type: "quote_from_worker",
         data: {
+          type: "quote_from_worker",
           quotation_id: String(quotationId),
           request_id: String(request_id),
           url: `/requests/${request_id}`,
@@ -549,9 +591,7 @@ export const RequestController = {
       });
     }
   },
-  // ===============================
-  // 🔹 Khách hàng chấp nhận hoặc từ chối báo giá
-  // ===============================
+
   // ===============================
   // 🔹 Khách hàng chấp nhận hoặc từ chối báo giá
   // ===============================
@@ -673,6 +713,7 @@ export const RequestController = {
       });
     }
   },
+
   // ===========================================
   // 🔹 Cập nhật tiến độ đầu việc theo mảng items
   // ===========================================
@@ -768,7 +809,7 @@ export const RequestController = {
             data: {
               type: "report_job",
               request_id: String(request_id),
-              url: `/request/${request_id}`,
+              url: `/report/${request_id}`,
             },
           });
         }
@@ -796,7 +837,7 @@ export const RequestController = {
             data: {
               type: "report_job",
               request_id: String(request_id),
-              url: `/request/${request_id}`,
+              url: `/report/${request_id}`,
             },
           });
         }
@@ -822,7 +863,7 @@ export const RequestController = {
             data: {
               type: "report_job",
               request_id: String(request_id),
-              url: `/request/${request_id}`,
+              url: `/report/${request_id}`,
             },
           });
         }
@@ -834,7 +875,7 @@ export const RequestController = {
             data: {
               type: "report_job",
               request_id: String(request_id),
-              url: `/request/${request_id}`,
+              url: `/report/${request_id}`,
             },
           });
         }
@@ -857,6 +898,7 @@ export const RequestController = {
       });
     }
   },
+
   // ===============================
   // 🔹 Cập nhật status request => completed
   // ===============================
