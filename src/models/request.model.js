@@ -35,7 +35,7 @@ export const insertStatusLog = async ({
   reason = null,
   connection = db,
 }) => {
-  const logId = generateId("RLOG");
+  const logId = generateId("RLOG_");
   await connection.query(
     `INSERT INTO request_status_logs 
      (id, request_id, old_status, new_status, changed_by, reason, created_at)
@@ -115,7 +115,7 @@ const insertRequestImages = async (
   if (!images || images.length === 0) return;
 
   const values = images.map((url) => [
-    generateId("IMG"),
+    generateId("IMG_"),
     request_id,
     uploaded_by,
     url,
@@ -148,7 +148,7 @@ export const RequestModel = {
     images = [],
   }) {
     return await withTransaction(async (conn) => {
-      const requestId = generateId("REQ");
+      const requestId = generateId("REQ_");
 
       await conn.query(
         `INSERT INTO requests 
@@ -684,7 +684,7 @@ export const RequestModel = {
          (id, request_id, old_technician_id, new_technician_id, assigned_by, reason)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          generateId("ASSIGN"),
+          generateId("ASSIGN_"),
           request_id,
           old?.technician_id || null,
           technician_id,
@@ -747,7 +747,7 @@ export const RequestModel = {
   // 7. Thợ gửi báo giá
   async createQuotation({ request_id, technician_id, items }) {
     return await withTransaction(async (conn) => {
-      const quotationId = generateId("QUOTE");
+      const quotationId = generateId("QUOTE_");
       const total_price = items.reduce(
         (sum, i) => sum + Number(i.price || 0),
         0
@@ -760,7 +760,7 @@ export const RequestModel = {
       );
 
       const itemValues = items.map((item) => [
-        generateId("QITEM"),
+        generateId("QITEM_"),
         quotationId,
         item.name,
         Number(item.price || 0),
@@ -853,7 +853,7 @@ export const RequestModel = {
 
       // 5. (Tùy chọn) Ghi log riêng cho quotation_items nếu cần audit chi tiết
       if (isAccept) {
-        const logId = generateId("QLOG");
+        const logId = generateId("QLOG_");
         await conn.query(
           `INSERT INTO quotation_items_logs 
           (id, quotation_item_id, old_status, new_status, note, changed_by, created_at)
@@ -912,7 +912,7 @@ export const RequestModel = {
         );
         if (images.length > 0) {
           const values = images.map((url) => [
-            generateId("QIMG"),
+            generateId("QIMG_"),
             item_id,
             technician_id,
             url,
@@ -928,7 +928,7 @@ export const RequestModel = {
            (id, quotation_item_id, old_status, new_status, note, changed_by)
            VALUES (?, ?, ?, ?, ?, ?)`,
           [
-            generateId("QLOG"),
+            generateId("QLOG_"),
             item_id,
             old.status,
             status,
@@ -980,7 +980,7 @@ export const RequestModel = {
     );
     if (!quotation) throw new Error("Không tìm thấy báo giá");
 
-    const paymentId = generateId("PAY");
+    const paymentId = generateId("PAY_");
 
     await db.query(
       `INSERT INTO payments (id, request_id, payment_method, amount, payment_status)

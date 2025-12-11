@@ -240,7 +240,7 @@ export const PaymentModel = {
 
   //   // Lưu ảnh – dùng URLs từ controller
   //   const values = images.map((url) => [
-  //     generateId("PPF"),
+  //     generateId("PPF_"),
   //     payment_id,
   //     user_id,
   //     url, // ⬅ Lưu URL trực tiếp
@@ -287,7 +287,7 @@ export const PaymentModel = {
       // 3. Lưu ảnh mới
       if (images && images.length > 0) {
         const values = images.map((url) => [
-          generateId("PPF"),
+          generateId("PPF_"),
           payment_id,
           user_id,
           url,
