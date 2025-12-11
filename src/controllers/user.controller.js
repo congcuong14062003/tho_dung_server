@@ -1,6 +1,7 @@
 import { TechnicianModel } from "../models/technician.model.js";
 import { UserModel } from "../models/user.model.js";
 import { baseResponse } from "../utils/response.helper.js";
+import bcrypt from "bcryptjs";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -152,6 +153,59 @@ export const UserController = {
         code: 500,
         status: false,
         message: "Lỗi server khi cập nhật trạng thái",
+      });
+    }
+  },
+  async changePassword(req, res) {
+    try {
+      const userId = req.user.id;
+      const { oldPassword, newPassword } = req.body;
+
+      if (!oldPassword || !newPassword) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Thiếu mật khẩu cũ hoặc mật khẩu mới",
+        });
+      }
+
+      // Lấy thông tin user
+      const user = await UserModel.getUserWithPassword(userId);
+      if (!user) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy người dùng",
+        });
+      }
+
+      // So sánh mật khẩu cũ
+      const isMatch = await bcrypt.compare(oldPassword, user.password_hash);
+      if (!isMatch) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Mật khẩu cũ không đúng",
+        });
+      }
+
+      // Hash mật khẩu mới
+      const hashedNew = await bcrypt.hash(newPassword, 10);
+
+      // Cập nhật DB
+      await UserModel.updateUserPassword(userId, hashedNew);
+
+      return baseResponse(res, {
+        code: 200,
+        status: true,
+        message: "Đổi mật khẩu thành công",
+      });
+    } catch (error) {
+      console.error("Lỗi changePassword:", error);
+      return baseResponse(res, {
+        code: 500,
+        status: false,
+        message: "Lỗi server khi đổi mật khẩu",
       });
     }
   },

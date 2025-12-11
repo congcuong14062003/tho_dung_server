@@ -39,4 +39,13 @@ router.post(
   UserController.updateStatus
 );
 
+// 🔐 Đổi mật khẩu
+router.post(
+  "/change-password",
+  verifyToken,
+  checkUserStatus,
+  authorizeRoles("customer", "technician"),
+  UserController.changePassword
+);
+
 export default router;

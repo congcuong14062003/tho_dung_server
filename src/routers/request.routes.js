@@ -122,7 +122,7 @@ router.post(
   "/set-completed",
   verifyToken,
   checkUserStatus,
-  authorizeRoles("customer"),
+  authorizeRoles("customer", "technician"),
   RequestController.setCompleted
 );
 

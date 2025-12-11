@@ -1,6 +1,10 @@
 import db from "../config/db.js";
 import { generateId } from "../utils/crypto.js";
-import { insertStatusLog, RequestModel, updateRequestStatus } from "./request.model.js";
+import {
+  insertStatusLog,
+  RequestModel,
+  updateRequestStatus,
+} from "./request.model.js";
 // ==============================
 // 🔹 HÀM DÙNG CHUNG (PRIVATE)
 // ==============================
@@ -23,7 +27,55 @@ const withTransaction = async (callback) => {
   }
 };
 export const PaymentModel = {
-  async getPaymentDetail(requestId) {
+  async getPaymentDetail(payment_id) {
+    // 1. Lấy payment
+    const [rows] = await db.query(
+      `SELECT 
+        p.*,
+        r.name_request,
+        r.status AS request_status,
+        COALESCE(q.total_price, p.amount) AS amount_to_pay
+     FROM payments p
+     JOIN requests r ON p.request_id = r.id
+     LEFT JOIN quotations q ON q.request_id = p.request_id
+     WHERE p.id = ?
+     LIMIT 1`,
+      [payment_id]
+    );
+
+    if (rows.length === 0) return null;
+
+    const payment = rows[0];
+
+    // 2. Lấy chứng từ thanh toán
+    const [proofs] = await db.query(
+      `SELECT id, image_url, uploaded_by, created_at 
+     FROM payment_proofs 
+     WHERE payment_id = ?
+     ORDER BY created_at ASC`,
+      [payment_id]
+    );
+
+    return {
+      payment_id: payment.id,
+      request_id: payment.request_id,
+      name_request: payment.name_request,
+      request_status: payment.request_status,
+      amount: Number(payment.amount_to_pay),
+      payment_method: payment.payment_method,
+      payment_status: payment.payment_status,
+      created_at: payment.created_at,
+      paid_at: payment.paid_at,
+
+      proofs: proofs.map((p) => ({
+        id: p.id,
+        url: p.image_url,
+        uploaded_by: p.uploaded_by,
+        created_at: p.created_at,
+      })),
+    };
+  },
+  async getPaymentDetailByRequest(requestId) {
     // 1. Lấy payment + số tiền cần thanh toán
     const [paymentRows] = await db.query(
       `SELECT p.*, COALESCE(q.total_price, p.amount) AS amount_to_pay,
@@ -188,7 +240,7 @@ export const PaymentModel = {
 
   //   // Lưu ảnh – dùng URLs từ controller
   //   const values = images.map((url) => [
-  //     generateId("PPF"),
+  //     generateId("PPF_"),
   //     payment_id,
   //     user_id,
   //     url, // ⬅ Lưu URL trực tiếp
@@ -235,7 +287,7 @@ export const PaymentModel = {
       // 3. Lưu ảnh mới
       if (images && images.length > 0) {
         const values = images.map((url) => [
-          generateId("PPF"),
+          generateId("PPF_"),
           payment_id,
           user_id,
           url,

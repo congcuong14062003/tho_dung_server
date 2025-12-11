@@ -35,13 +35,35 @@ export const insertStatusLog = async ({
   reason = null,
   connection = db,
 }) => {
-  const logId = generateId("RLOG");
+  const logId = generateId("RLOG_");
   await connection.query(
     `INSERT INTO request_status_logs 
      (id, request_id, old_status, new_status, changed_by, reason, created_at)
      VALUES (?, ?, ?, ?, ?, ?, NOW())`,
     [logId, request_id, old_status, new_status, changed_by, reason]
   );
+};
+
+const STATUS_GROUP = {
+  all: null,
+  pending: ["pending", "assigning", "assigned", "quoted"],
+  in_progress: ["in_progress", "customer_review", "payment", "payment_review"],
+  completed: ["completed"],
+  cancelled: ["cancelled"],
+};
+
+const STATUS_GROUP_TECHNICIAN = {
+  all: null,
+
+  pending: ["pending", "assigning"],
+
+  assigned: ["assigned"],
+
+  in_progress: ["in_progress", "customer_review", "payment", "payment_review", "quoted"],
+
+  completed: ["completed"],
+
+  cancelled: ["cancelled"],
 };
 
 /**
@@ -93,7 +115,7 @@ const insertRequestImages = async (
   if (!images || images.length === 0) return;
 
   const values = images.map((url) => [
-    generateId("IMG"),
+    generateId("IMG_"),
     request_id,
     uploaded_by,
     url,
@@ -126,7 +148,7 @@ export const RequestModel = {
     images = [],
   }) {
     return await withTransaction(async (conn) => {
-      const requestId = generateId("REQ");
+      const requestId = generateId("REQ_");
 
       await conn.query(
         `INSERT INTO requests 
@@ -310,16 +332,21 @@ export const RequestModel = {
   }) {
     const search = `%${keySearch}%`;
 
-    // Nếu status = all thì không filter theo trạng thái
-    let statusCondition = "";
-    const params = [userId, search, search, search, search, limit, offset];
+    // Map status group
+    const mappedStatuses = STATUS_GROUP[status] || null;
 
-    if (status !== "all") {
-      statusCondition = "AND r.status = ?";
-      params.splice(1, 0, status); // thêm status ngay sau user_id
+    let statusCondition = "";
+    const params = [userId];
+
+    if (mappedStatuses) {
+      statusCondition = `AND r.status IN (${mappedStatuses
+        .map(() => "?")
+        .join(",")})`;
+      params.push(...mappedStatuses);
     }
 
-    // Truy vấn danh sách yêu cầu
+    params.push(search, search, search, search, limit, offset);
+
     const [rows] = await db.query(
       `
     SELECT 
@@ -338,7 +365,7 @@ export const RequestModel = {
     JOIN services s ON r.service_id = s.id
     JOIN service_categories sc ON s.category_id = sc.id
     WHERE 
-      r.user_id = ? 
+      r.user_id = ?
       ${statusCondition}
       AND (
         r.name_request LIKE ? OR
@@ -352,9 +379,10 @@ export const RequestModel = {
       params
     );
 
-    // Đếm tổng số
-    const countParams = [userId, search, search, search, search];
-    if (status !== "all") countParams.splice(1, 0, status);
+    // Count
+    const countParams = [userId];
+    if (mappedStatuses) countParams.push(...mappedStatuses);
+    countParams.push(search, search, search, search);
 
     const [[{ total }]] = await db.query(
       `
@@ -377,7 +405,6 @@ export const RequestModel = {
 
     return { data: rows, total };
   },
-
   // ===============================
   // 🔹 Lấy danh sách yêu cầu được gán cho thợ
   // ===============================
@@ -390,21 +417,20 @@ export const RequestModel = {
   }) {
     const search = `%${keySearch}%`;
 
-    let statusCondition = "";
-    const params = [
-      technicianId,
-      search,
-      search,
-      search,
-      search,
-      limit,
-      offset,
-    ];
+    // map status cho thợ
+    const mappedStatuses = STATUS_GROUP_TECHNICIAN[status] || null;
 
-    if (status !== "all") {
-      statusCondition = "AND r.status = ?";
-      params.splice(1, 0, status); // thêm status ngay sau technicianId
+    let statusCondition = "";
+    const params = [technicianId];
+
+    if (mappedStatuses) {
+      statusCondition = `AND r.status IN (${mappedStatuses
+        .map(() => "?")
+        .join(",")})`;
+      params.push(...mappedStatuses);
     }
+
+    params.push(search, search, search, search, limit, offset);
 
     const [rows] = await db.query(
       `
@@ -428,7 +454,7 @@ export const RequestModel = {
     JOIN service_categories sc ON s.category_id = sc.id
     JOIN users u ON r.user_id = u.id
     WHERE 
-      r.technician_id = ? 
+      r.technician_id = ?
       ${statusCondition}
       AND (
         r.name_request LIKE ? OR
@@ -442,9 +468,10 @@ export const RequestModel = {
       params
     );
 
-    // Đếm tổng số bản ghi
-    const countParams = [technicianId, search, search, search, search];
-    if (status !== "all") countParams.splice(1, 0, status);
+    // Count
+    const countParams = [technicianId];
+    if (mappedStatuses) countParams.push(...mappedStatuses);
+    countParams.push(search, search, search, search);
 
     const [[{ total }]] = await db.query(
       `
@@ -453,7 +480,7 @@ export const RequestModel = {
     JOIN services s ON r.service_id = s.id
     JOIN service_categories sc ON s.category_id = sc.id
     WHERE 
-      r.technician_id = ? 
+      r.technician_id = ?
       ${statusCondition}
       AND (
         r.name_request LIKE ? OR
@@ -467,7 +494,6 @@ export const RequestModel = {
 
     return { data: rows, total };
   },
-
   // ===============================
   // 🔹 Lấy chi tiết yêu cầu
   // ===============================
@@ -658,7 +684,7 @@ export const RequestModel = {
          (id, request_id, old_technician_id, new_technician_id, assigned_by, reason)
          VALUES (?, ?, ?, ?, ?, ?)`,
         [
-          generateId("ASSIGN"),
+          generateId("ASSIGN_"),
           request_id,
           old?.technician_id || null,
           technician_id,
@@ -721,7 +747,7 @@ export const RequestModel = {
   // 7. Thợ gửi báo giá
   async createQuotation({ request_id, technician_id, items }) {
     return await withTransaction(async (conn) => {
-      const quotationId = generateId("QUOTE");
+      const quotationId = generateId("QUOTE_");
       const total_price = items.reduce(
         (sum, i) => sum + Number(i.price || 0),
         0
@@ -734,7 +760,7 @@ export const RequestModel = {
       );
 
       const itemValues = items.map((item) => [
-        generateId("QITEM"),
+        generateId("QITEM_"),
         quotationId,
         item.name,
         Number(item.price || 0),
@@ -827,7 +853,7 @@ export const RequestModel = {
 
       // 5. (Tùy chọn) Ghi log riêng cho quotation_items nếu cần audit chi tiết
       if (isAccept) {
-        const logId = generateId("QLOG");
+        const logId = generateId("QLOG_");
         await conn.query(
           `INSERT INTO quotation_items_logs 
           (id, quotation_item_id, old_status, new_status, note, changed_by, created_at)
@@ -877,7 +903,7 @@ export const RequestModel = {
 
         await conn.query(
           `UPDATE quotation_items SET status = ?, note = ?, reason = ? WHERE id = ?`,
-          [status, note || null, reason || null,  item_id]
+          [status, note || null, reason || null, item_id]
         );
 
         await conn.query(
@@ -886,7 +912,7 @@ export const RequestModel = {
         );
         if (images.length > 0) {
           const values = images.map((url) => [
-            generateId("QIMG"),
+            generateId("QIMG_"),
             item_id,
             technician_id,
             url,
@@ -901,7 +927,14 @@ export const RequestModel = {
           `INSERT INTO quotation_items_logs 
            (id, quotation_item_id, old_status, new_status, note, changed_by)
            VALUES (?, ?, ?, ?, ?, ?)`,
-          [generateId("QLOG"), item_id, old.status, status, reason, technician_id]
+          [
+            generateId("QLOG_"),
+            item_id,
+            old.status,
+            status,
+            reason,
+            technician_id,
+          ]
         );
       }
 
@@ -947,7 +980,7 @@ export const RequestModel = {
     );
     if (!quotation) throw new Error("Không tìm thấy báo giá");
 
-    const paymentId = generateId("PAY");
+    const paymentId = generateId("PAY_");
 
     await db.query(
       `INSERT INTO payments (id, request_id, payment_method, amount, payment_status)

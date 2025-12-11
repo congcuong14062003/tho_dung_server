@@ -15,7 +15,7 @@ const handlePagination = (req) => {
   return { page, size, keySearch, status, limit: size, offset };
 };
 export const RequestController = {
-  // 1. Tạo yêu cầu – chỉ validate
+  // Tạo yêu cầu – chỉ validate
   async create(req, res) {
     try {
       const {
@@ -91,13 +91,17 @@ export const RequestController = {
     }
   },
 
-  // 2. Hủy yêu cầu – gọn hơn
+  //  Hủy yêu cầu – gọn hơn
+  //  Hủy yêu cầu – gọn hơn + thông báo admin
   async cancelRequest(req, res) {
     try {
+      const { request_id, reason } = req.body;
+      const userId = req.user.id;
+
       const result = await RequestModel.cancelRequest({
-        request_id: req.body.request_id,
-        user_id: req.user.id,
-        reason: req.body.reason,
+        request_id,
+        user_id: userId,
+        reason,
       });
 
       if (!result.success) {
@@ -107,6 +111,40 @@ export const RequestController = {
           message: result.message,
         });
       }
+
+      // =============================================
+      //  🔔 GỬI NOTIFICATION SAU KHI HỦY THÀNH CÔNG
+      // =============================================
+
+      const title = "Khách hàng đã hủy yêu cầu";
+      const body = `Yêu cầu #${request_id} đã bị hủy. Lý do: ${
+        reason || "Không rõ lý do"
+      }`;
+
+      // 1️⃣ Gửi thông báo đến tất cả admin
+      await sendNotificationToAdmins({
+        title,
+        body,
+        data: {
+          type: "request_cancel",
+          request_id: String(request_id),
+          url: `/requests/${request_id}`,
+        },
+      });
+
+      // // 2️⃣ Gửi thông báo tới thợ nếu đơn có thợ
+      // if (result.technician_id) {
+      //   await sendNotification({
+      //     userId: result.technician_id,
+      //     title,
+      //     body,
+      //     data: {
+      //       type: "request_cancel",
+      //       request_id: String(request_id),
+      //       url: `/request/${request_id}`,
+      //     },
+      //   });
+      // }
 
       return baseResponse(res, {
         code: 200,
@@ -122,8 +160,7 @@ export const RequestController = {
       });
     }
   },
-
-  // 3. Các hàm lấy danh sách – dùng helper
+  // Các hàm lấy danh sách – dùng helper
   async getAll(req, res) {
     try {
       const { data, total } = await RequestModel.getAll(handlePagination(req));
@@ -142,6 +179,7 @@ export const RequestController = {
     }
   },
 
+  // lấy danh sách yêu cầu bởi khách hàng
   async getRequestsByUser(req, res) {
     try {
       const params = { ...handlePagination(req), userId: req.user.id };
@@ -161,6 +199,7 @@ export const RequestController = {
     }
   },
 
+  // lấy danh sách yêu cầu bởi người thợ
   async getRequestsByTechnician(req, res) {
     try {
       const params = { ...handlePagination(req), technicianId: req.user.id };
@@ -182,7 +221,7 @@ export const RequestController = {
     }
   },
 
-  // 4. Chi tiết yêu cầu – thêm check quyền (rất quan trọng!)
+  // Chi tiết yêu cầu – thêm check quyền (rất quan trọng!)
   async getRequestDetail(req, res) {
     try {
       const { id } = req.params;
@@ -221,14 +260,36 @@ export const RequestController = {
   },
 
   // Các hàm còn lại – chỉ gọi Model (đã xử lý hết logic + transaction)
+  // 4. Gán thợ – cần gửi thông báo cho thợ
   async assignRequest(req, res) {
     try {
+      const { request_id, technician_id, reason } = req.body;
+      const admin_id = req.user.id;
+
       const result = await RequestModel.assignRequest({
-        request_id: req.body.request_id,
-        technician_id: req.body.technician_id,
-        admin_id: req.user.id,
-        reason: req.body.reason,
+        request_id,
+        technician_id,
+        admin_id,
+        reason,
       });
+
+      // 🟢 Lấy thông tin request để lấy tên, mô tả…
+      const request = await RequestModel.getRequestDetail(request_id);
+
+      // ===============================
+      // 🎉 Gửi NOTIFICATION CHO THỢ
+      // ===============================
+      await sendNotification({
+        userId: technician_id,
+        title: "Bạn được giao một yêu cầu mới",
+        body: `Yêu cầu: ${request.name_request}`,
+        data: {
+          type: "assign_job",
+          request_id: String(request_id),
+          url: `/assigned/${request_id}`,
+        },
+      });
+
       return baseResponse(res, {
         code: 200,
         status: true,
@@ -245,47 +306,129 @@ export const RequestController = {
     }
   },
 
+  // phản hồi khi được gán việc
   async technicianResponse(req, res) {
     try {
+      const userId = req.user.id;
+      const role = req.user.role; // technician | customer | admin
+      const { request_id, action, reason } = req.body;
+
+      if (!["accept", "reject"].includes(action)) {
+        return baseResponse(res, {
+          code: 400,
+          status: false,
+          message: "Hành động không hợp lệ",
+        });
+      }
+
+      // ===========================================
+      // 🔍 Lấy request để kiểm tra quyền
+      // ===========================================
+      const request = await RequestModel.getRequestDetail(request_id);
+      if (!request) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy yêu cầu",
+        });
+      }
+
+      const assignedTechnicianId = request?.technician?.id;
+      const customerId = request?.customer?.id;
+
+      // ===========================================
+      // 🚫 CHECK QUYỀN
+      // ===========================================
+
+      // ❌ Khách hàng không được gọi API này
+      if (role === "customer") {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không có quyền thao tác",
+        });
+      }
+
+      // ❌ Thợ phải đúng là thợ được gán vào request
+      if (role === "technician" && userId !== assignedTechnicianId) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không phải thợ được gán vào yêu cầu này",
+        });
+      }
+
+      // ✔ Admin được phép
+      // Nếu không muốn admin có quyền => em sẽ lock lại
+
+      // ===========================================
+      // ✔ Xử lý accept / reject
+      // ===========================================
       const result = await RequestModel.technicianResponse({
-        request_id: req.body.request_id,
-        technician_id: req.user.id,
-        action: req.body.action,
-        reason: req.body.reason,
+        request_id,
+        technician_id: userId,
+        action,
+        reason,
       });
 
-      const isAccept = req.body.action === "accept";
-      const requestId = req.body.request_id;
+      const isAccept = action === "accept";
 
+      // ----- TITLE -----
       const title = isAccept
-        ? "Thợ đã chấp nhận yêu cầu"
-        : "Thợ đã từ chối yêu cầu";
+        ? "Thợ đã chấp nhận yêu cầu gán thợ"
+        : "Thợ đã từ chối yêu cầu gán thợ";
 
+      // ----- BODY -----
       const body = isAccept
-        ? `Một thợ vừa chấp nhận yêu cầu #${requestId}. Vui lòng kiểm tra chi tiết.`
-        : req.body.reason
-        ? `Một thợ đã từ chối yêu cầu #${requestId}. Lý do: ${req.body.reason}.`
-        : `Một thợ đã từ chối yêu cầu #${requestId}.`;
+        ? `Một thợ vừa chấp nhận yêu cầu #${request_id}.`
+        : reason
+        ? `Một thợ đã từ chối yêu cầu #${request_id}. Lý do: ${reason}.`
+        : `Một thợ đã từ chối yêu cầu #${request_id}.`;
 
-      // ================================
-      // 🎉 Gửi thông báo cho admin CMS
-      // ================================
+      // ----- TYPE -----
+      const notiType = isAccept
+        ? "technician_accept_assign"
+        : "technician_reject_assign";
+
+      // ===========================================
+      // 🟢 Gửi NOTI ADMIN
+      // ===========================================
       await sendNotificationToAdmins({
         title,
         body,
         data: {
-          request_id: String(requestId),
-          url: `/requests/${requestId}`,
+          type: notiType,
+          request_id: String(request_id),
+          action: isAccept ? "accept" : "reject",
+          url: `/requests/${request_id}`,
         },
       });
 
+      // ===========================================
+      // 🟢 Gửi NOTI CHO KHÁCH (nếu accept)
+      // ===========================================
+      if (isAccept && customerId) {
+        await sendNotification({
+          userId: customerId,
+          title: "Thợ đã nhận việc",
+          body: `Yêu cầu #${request_id} đã có thợ nhận.`,
+          data: {
+            type: "technician_accept_assign",
+            request_id: String(request_id),
+            url: `/request/${request_id}`,
+          },
+        });
+      }
+
+      // ===========================================
+      // ✔ RESPONSE
+      // ===========================================
       return baseResponse(res, {
         code: 200,
         status: true,
-        message:
-          req.body.action === "accept"
-            ? "Chấp nhận yêu cầu thành công"
-            : "Từ chối yêu cầu thành công",
+        message: isAccept
+          ? "Chấp nhận yêu cầu thành công"
+          : "Từ chối yêu cầu thành công",
         data: result,
       });
     } catch (error) {
@@ -332,9 +475,13 @@ export const RequestController = {
     }
   },
 
+  // Tạo báo giá cho khách hàng
   async createQuotation(req, res) {
     try {
+      const userId = req.user.id;
+      const role = req.user.role; // technician | customer | admin
       const { request_id, items } = req.body;
+
       if (!Array.isArray(items) || items.length === 0) {
         return baseResponse(res, {
           code: 400,
@@ -343,11 +490,91 @@ export const RequestController = {
         });
       }
 
+      // ====================================
+      // 🔍 Lấy request để kiểm tra quyền
+      // ====================================
+      const request = await RequestModel.getRequestDetail(request_id);
+      if (!request) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy yêu cầu",
+        });
+      }
+
+      const customerId = request?.customer?.id;
+      const technicianId = request?.technician?.id;
+
+      // ====================================
+      // 🚫 CHECK QUYỀN
+      // ====================================
+      // ❌ Khách hàng không bao giờ được tạo báo giá
+      if (role === "customer") {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không có quyền tạo báo giá",
+        });
+      }
+
+      // ❌ Thợ chỉ được tạo báo giá cho request thuộc về mình
+      if (role === "technician" && userId !== technicianId) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không phải thợ của yêu cầu này",
+        });
+      }
+
+      // ✔ Admin thì bỏ qua kiểm tra (admin có quyền tạo báo giá thay thợ)
+      // Nếu anh không muốn admin có quyền → em sẽ chỉnh lại
+
+      // ====================================
+      // ✔ Tạo báo giá
+      // ====================================
       const quotationId = await RequestModel.createQuotation({
         request_id,
-        technician_id: req.user.id,
+        technician_id: userId,
         items,
       });
+
+      const nameRequest = request?.name_request || "";
+
+      // ====================================
+      // 🔔 Nội dung NOTIFICATION
+      // ====================================
+      const title = "Thợ đã gửi báo giá";
+      const body = `Báo giá mới cho yêu cầu: ${nameRequest}`;
+
+      // ====================================
+      // 🔔 Gửi NOTI CHO ADMIN
+      // ====================================
+      await sendNotificationToAdmins({
+        title,
+        body,
+        data: {
+          type: "quote_from_worker",
+          quotation_id: String(quotationId),
+          request_id: String(request_id),
+          url: `/requests/${request_id}`,
+        },
+      });
+
+      // ====================================
+      // 🔔 Gửi NOTI CHO KHÁCH HÀNG
+      // ====================================
+      if (customerId) {
+        await sendNotification({
+          userId: customerId,
+          title,
+          body,
+          data: {
+            type: "quote_from_worker",
+            request_id: String(request_id),
+            url: `/request/${request_id}`,
+          },
+        });
+      }
 
       return baseResponse(res, {
         code: 200,
@@ -364,14 +591,16 @@ export const RequestController = {
       });
     }
   },
+
   // ===============================
   // 🔹 Khách hàng chấp nhận hoặc từ chối báo giá
   // ===============================
   async quotationResponse(req, res) {
     try {
       const userId = req.user.id;
+      const role = req.user.role; // customer | technician | admin
+
       const { request_id, action, reason } = req.body;
-      // action = "accept" | "reject"
 
       if (!["accept", "reject"].includes(action)) {
         return baseResponse(res, {
@@ -381,12 +610,90 @@ export const RequestController = {
         });
       }
 
+      // ================================
+      // 🔍 Lấy request để kiểm tra quyền
+      // ================================
+      const request = await RequestModel.getRequestDetail(request_id);
+      if (!request) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy yêu cầu",
+        });
+      }
+
+      const customerId = request?.customer?.id;
+      const technicianId = request?.technician?.id;
+
+      // =====================================
+      // 🚫 CHECK QUYỀN — chỉ khách hàng hợp lệ được thao tác
+      // =====================================
+      if (role !== "customer" || userId !== customerId) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không có quyền thực hiện hành động này",
+        });
+      }
+
+      // ================================
+      // ✔ Cập nhật DB
+      // ================================
       const result = await RequestModel.quotationResponse({
         request_id,
         user_id: userId,
         action,
         reason,
       });
+
+      const nameRequest = request?.name_request || "";
+
+      // ================================
+      // 🔔 Chuẩn bị nội dung thông báo
+      // ================================
+      const title =
+        action === "accept"
+          ? "Khách hàng đã chấp nhận báo giá"
+          : "Khách hàng đã từ chối báo giá";
+
+      const body =
+        action === "accept"
+          ? `Báo giá cho yêu cầu '${nameRequest}' đã được chấp nhận.`
+          : reason
+          ? `Khách hàng từ chối báo giá yêu cầu '${nameRequest}'. Lý do: ${reason}`
+          : `Khách hàng từ chối báo giá yêu cầu '${nameRequest}'.`;
+
+      const notiType =
+        action === "accept" ? "quote_approved" : "quote_rejected";
+
+      // ================================
+      // 🔔 Gửi thông báo ADMIN
+      // ================================
+      await sendNotificationToAdmins({
+        title,
+        body,
+        data: {
+          type: notiType,
+          request_id: String(request_id),
+          url: `/requests/${request_id}`,
+        },
+      });
+
+      // ================================
+      // 🔔 Gửi thông báo THỢ
+      // ================================
+      if (technicianId) {
+        await sendNotification({
+          userId: technicianId,
+          title,
+          body,
+          data: {
+            type: notiType,
+            request_id: String(request_id),
+            url: `/request/${request_id}`,
+          },
+        });
+      }
 
       return baseResponse(res, {
         code: 200,
@@ -412,35 +719,169 @@ export const RequestController = {
   // ===========================================
   async updateItemProgress(req, res) {
     try {
-      const technicianId = req.user.id;
-      const { request_id, items = [] } = req.body;
+      const userId = req.user.id;
+      const role = req.user.role; // technician | customer | admin
+      const { request_id, items = [], reason } = req.body;
 
-      console.log("request_id: ", request_id);
-      console.log("items: ", items);
-
-      if (!request_id) {
+      if (!request_id)
         return baseResponse(res, {
           code: 400,
           status: false,
           message: "Thiếu request_id",
         });
-      }
 
-      if (!Array.isArray(items) || items.length === 0) {
+      if (!Array.isArray(items) || items.length === 0)
         return baseResponse(res, {
           code: 400,
           status: false,
           message: "Danh sách items không hợp lệ",
         });
-      }
 
-      // Gọi Model xử lý chính
+      // === Cập nhật database ===
       const result = await RequestModel.updateItemProgress({
         request_id,
-        technician_id: technicianId,
+        technician_id: userId,
         items,
       });
 
+      // ===== Lấy thông tin request để gửi noti =====
+      const request = await RequestModel.getRequestDetail(request_id);
+      const customerId = request?.customer?.id;
+      const technicianId = request?.technician?.id;
+      // ===== CHECK QUYỀN NGƯỜI DÙNG =====
+      // Technician chỉ được update request mà họ được gán
+      if (role === "technician" && technicianId !== userId) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không có quyền cập nhật tiến độ đầu việc này.",
+        });
+      }
+
+      // Customer chỉ được update request của chính họ
+      if (role === "customer" && customerId !== userId) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không có quyền cập nhật đầu việc của yêu cầu này.",
+        });
+      }
+
+      // Admin thì bypass, không cần check
+
+      // ===== Chuẩn bị message theo từng item =====
+      const updates = items
+        .map((it) => {
+          if (it.status === "completed")
+            return `Đầu việc "${it.name}" đã hoàn thành.`;
+
+          if (it.status === "in_progress")
+            return `Đầu việc "${it.name}" đang được tiếp tục.`;
+
+          return `Đầu việc "${it.name}" đã cập nhật trạng thái: ${it.status}`;
+        })
+        .join(" ");
+
+      // Nếu khách trả lại (completed → in_progress)
+      const revertMessage = reason
+        ? `Khách hàng yêu cầu làm lại: ${reason}`
+        : null;
+
+      const title =
+        role === "technician"
+          ? "Thợ đã cập nhật tiến độ"
+          : role === "customer"
+          ? "Khách hàng đã cập nhật tiến độ"
+          : "Admin đã cập nhật tiến độ";
+
+      const body = revertMessage ? revertMessage : updates;
+
+      // =============== GỬI NOTI TÙY ROLE ===============
+
+      // 1) Nếu thợ cập nhật → gửi cho khách + admin
+      if (role === "technician") {
+        console.log("vao 2");
+        if (customerId) {
+          await sendNotification({
+            userId: customerId,
+            title,
+            body,
+            data: {
+              type: "report_job",
+              request_id: String(request_id),
+              url: `/report/${request_id}`,
+            },
+          });
+        }
+
+        await sendNotificationToAdmins({
+          title,
+          body,
+          data: {
+            type: "report_job",
+            request_id: String(request_id),
+            url: `/requests/${request_id}`,
+          },
+        });
+      }
+
+      // 2) Nếu khách cập nhật → gửi cho thợ + admin
+      if (role === "customer") {
+        console.log("vao 1");
+
+        if (technicianId) {
+          await sendNotification({
+            userId: technicianId,
+            title,
+            body,
+            data: {
+              type: "report_job",
+              request_id: String(request_id),
+              url: `/report/${request_id}`,
+            },
+          });
+        }
+
+        await sendNotificationToAdmins({
+          title,
+          body,
+          data: {
+            type: "report_job",
+            request_id: String(request_id),
+            url: `/requests/${request_id}`,
+          },
+        });
+      }
+
+      // 3) Nếu admin cập nhật → gửi cho cả 2
+      if (role === "admin") {
+        if (technicianId) {
+          await sendNotification({
+            userId: technicianId,
+            title,
+            body,
+            data: {
+              type: "report_job",
+              request_id: String(request_id),
+              url: `/report/${request_id}`,
+            },
+          });
+        }
+        if (customerId) {
+          await sendNotification({
+            userId: customerId,
+            title,
+            body,
+            data: {
+              type: "report_job",
+              request_id: String(request_id),
+              url: `/report/${request_id}`,
+            },
+          });
+        }
+      }
+
+      // =============== RESPONSE ===============
       return baseResponse(res, {
         code: 200,
         status: true,
@@ -457,6 +898,7 @@ export const RequestController = {
       });
     }
   },
+
   // ===============================
   // 🔹 Cập nhật status request => completed
   // ===============================
@@ -473,11 +915,72 @@ export const RequestController = {
         });
       }
 
-      // Gọi model update status
+      // --- Lấy thông tin request để kiểm tra quyền ---
+      const request = await RequestModel.getRequestDetail(request_id);
+
+      if (!request) {
+        return baseResponse(res, {
+          code: 404,
+          status: false,
+          message: "Không tìm thấy yêu cầu",
+        });
+      }
+
+      const customerId = request?.customer?.id;
+
+      // ===============================
+      // ❌ Kiểm tra quyền
+      // ===============================
+      if (String(userId) !== String(customerId)) {
+        return baseResponse(res, {
+          code: 403,
+          status: false,
+          message: "Bạn không có quyền hoàn thành yêu cầu này",
+        });
+      }
+
+      // ===============================
+      // 🔹 Cập nhật trạng thái completed
+      // ===============================
       const result = await RequestModel.setCompleted({
         request_id,
         user_id: userId,
       });
+
+      const technicianId = request?.technician?.id;
+      const nameRequest = request?.name_request || "";
+
+      const title = "Yêu cầu đã hoàn thành";
+      const body = `Khách hàng đã đánh dấu hoàn thành cho yêu cầu: ${nameRequest}`;
+
+      // ===============================
+      // 🟢 NOTI CHO ADMIN
+      // ===============================
+      await sendNotificationToAdmins({
+        title,
+        body,
+        data: {
+          type: "accept_inspection",
+          request_id: String(request_id),
+          url: `/requests/${request_id}`,
+        },
+      });
+
+      // ===============================
+      // 🟢 NOTI CHO THỢ
+      // ===============================
+      if (technicianId) {
+        await sendNotification({
+          userId: technicianId,
+          title,
+          body,
+          data: {
+            type: "accept_inspection",
+            request_id: String(request_id),
+            url: `/request/${request_id}`,
+          },
+        });
+      }
 
       return baseResponse(res, {
         code: 200,
