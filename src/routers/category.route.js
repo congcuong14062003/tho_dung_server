@@ -12,6 +12,7 @@ const router = express.Router();
 router.post(
   "/list-category",
   verifyToken,
+  checkUserStatus,
   CategoryController.getListForCustomer
 );
 

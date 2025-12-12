@@ -109,6 +109,7 @@ export const UserController = {
       });
     }
   },
+  
   async updateStatus(req, res) {
     try {
       const { userId, status } = req.body;
@@ -156,6 +157,7 @@ export const UserController = {
       });
     }
   },
+
   async changePassword(req, res) {
     try {
       const userId = req.user.id;
