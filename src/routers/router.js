@@ -8,6 +8,7 @@ import upload from "./media.route.js";
 import payment from './payment.route.js';
 import test from "./test.route.js"; // ⭐ import router test
 import notification from "./notification.route.js";
+import message from "./message.router.js"
 
 export default function RouterMain(app) {
   app.use("/auth", auth);
@@ -19,6 +20,10 @@ export default function RouterMain(app) {
   app.use("/upload", upload);
   app.use("/payments", payment)
   app.use("/notifications", notification)
+  app.use("/messsages", message)
+
+
+
   app.use("/test", test); // ⭐ router test
   return app;
 }
